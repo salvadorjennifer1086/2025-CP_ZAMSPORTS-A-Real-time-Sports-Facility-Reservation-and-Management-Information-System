@@ -121,6 +121,12 @@ function nav_active(string $path): bool {
 				</svg>
 				<span>My Bookings</span>
 			</a>
+			<a class="nav-link block px-3 py-2.5 rounded-md transition-all duration-200 <?php echo nav_active('calendar.php') ? 'bg-maroon-800 text-white shadow-sm' : 'text-maroon-100 hover:bg-maroon-600 hover:text-white'; ?>" href="<?php echo base_url('calendar.php'); ?>">
+				<svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+				</svg>
+				<span>Calendar</span>
+			</a>
 			<?php endif; ?>
 			<?php endif; ?>
 			
@@ -180,6 +186,12 @@ function nav_active(string $path): bool {
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
 				</svg>
 				<span>Reservations</span>
+			</a>
+			<a class="nav-link block px-3 py-2.5 rounded-md transition-all duration-200 <?php echo nav_active('admin/reservation_history.php') ? 'bg-maroon-800 text-white shadow-sm' : 'text-maroon-100 hover:bg-maroon-600 hover:text-white'; ?>" href="<?php echo base_url('admin/reservation_history.php'); ?>">
+				<svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+				</svg>
+				<span>Reservation History</span>
 			</a>
 			<a class="nav-link block px-3 py-2.5 rounded-md transition-all duration-200 <?php echo nav_active('admin/calendar.php') ? 'bg-maroon-800 text-white shadow-sm' : 'text-maroon-100 hover:bg-maroon-600 hover:text-white'; ?>" href="<?php echo base_url('admin/calendar.php'); ?>">
 				<svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -1,10 +1,8 @@
 <?php
-require_once __DIR__ . '/../partials/header.php';
+// Handle POST requests BEFORE including header to prevent "headers already sent" errors
 require_once __DIR__ . '/../lib/db.php';
 require_once __DIR__ . '/../lib/auth.php';
 require_role(['admin','staff']);
-
-$cats = db()->query('SELECT id, name FROM categories ORDER BY name')->fetchAll();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	$action = $_POST['action'] ?? '';
@@ -22,23 +20,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		$booking_end = (int)($_POST['booking_end_hour'] ?? 22);
 		$cooldown = (int)($_POST['cooldown_minutes'] ?? 0);
 		if ($name) {
-			$stmt = db()->prepare('INSERT INTO facilities (name, description, category_id, hourly_rate, weekend_rate_multiplier, holiday_rate_multiplier, nighttime_rate_multiplier, nighttime_start_hour, nighttime_end_hour, booking_start_hour, booking_end_hour, cooldown_minutes, is_active) VALUES (:n,:d,:c,:r,:wm,:hm,:nm,:nsh,:neh,:bsh,:beh,:cd,1)');
-			$stmt->execute([
-				':n'=>$name,
-				':d'=>$desc?:null,
-				':c'=>$cat?:null,
-				':r'=>$rate,
-				':wm'=>$weekend_mult,
-				':hm'=>$holiday_mult,
-				':nm'=>$nighttime_mult,
-				':nsh'=>$nighttime_start,
-				':neh'=>$nighttime_end,
-				':bsh'=>$booking_start,
-				':beh'=>$booking_end,
-				':cd'=>$cooldown
-			]);
-			header('Location: facilities.php?success=created');
-			exit;
+			db()->beginTransaction();
+			try {
+				$stmt = db()->prepare('INSERT INTO facilities (name, description, category_id, hourly_rate, weekend_rate_multiplier, holiday_rate_multiplier, nighttime_rate_multiplier, nighttime_start_hour, nighttime_end_hour, booking_start_hour, booking_end_hour, cooldown_minutes, is_active) VALUES (:n,:d,:c,:r,:wm,:hm,:nm,:nsh,:neh,:bsh,:beh,:cd,1)');
+				$stmt->execute([
+					':n'=>$name,
+					':d'=>$desc?:null,
+					':c'=>$cat?:null,
+					':r'=>$rate,
+					':wm'=>$weekend_mult,
+					':hm'=>$holiday_mult,
+					':nm'=>$nighttime_mult,
+					':nsh'=>$nighttime_start,
+					':neh'=>$nighttime_end,
+					':bsh'=>$booking_start,
+					':beh'=>$booking_end,
+					':cd'=>$cooldown
+				]);
+				$facility_id = db()->lastInsertId();
+				
+				// Handle pricing options if provided
+				if (isset($_POST['pricing_options']) && is_array($_POST['pricing_options'])) {
+					$pricingStmt = db()->prepare('INSERT INTO facility_pricing_options (facility_id, name, description, pricing_type, price_per_unit, price_per_hour, is_active, sort_order) VALUES (:fid,:n,:d,:pt,:ppu,0,:ia,:so)');
+					foreach ($_POST['pricing_options'] as $opt) {
+						if (!empty($opt['name']) && !empty($opt['pricing_type']) && isset($opt['price_per_unit'])) {
+							$pricingStmt->execute([
+								':fid' => $facility_id,
+								':n' => trim($opt['name']),
+								':d' => !empty($opt['description']) ? trim($opt['description']) : null,
+								':pt' => $opt['pricing_type'],
+								':ppu' => (float)$opt['price_per_unit'],
+								':ia' => isset($opt['is_active']) ? 1 : 0,
+								':so' => (int)($opt['sort_order'] ?? 0)
+							]);
+						}
+					}
+				}
+				
+				db()->commit();
+				header('Location: facilities.php?success=created');
+				exit;
+			} catch (Exception $e) {
+				db()->rollBack();
+				header('Location: facilities.php?error=create_failed');
+				exit;
+			}
 		}
 	}
 	if ($action === 'update') {
@@ -114,12 +140,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	if ($action === 'delete') {
 		$id = (int)($_POST['id'] ?? 0);
 		if ($id) {
-			// Check if facility has any reservations
-			$checkStmt = db()->prepare('SELECT COUNT(*) as count FROM reservations WHERE facility_id=:id');
+			// Check if facility has any pending reservations (not confirmed/paid)
+			// Only prevent deletion if there are pending reservations that need confirmation
+			$checkStmt = db()->prepare("
+				SELECT COUNT(*) as count 
+				FROM reservations 
+				WHERE facility_id=:id 
+				AND status = 'pending'
+			");
 			$checkStmt->execute([':id'=>$id]);
 			$result = $checkStmt->fetch();
 			if ($result['count'] > 0) {
-				header('Location: facilities.php?error=has_reservations&id='.$id);
+				header('Location: facilities.php?error=has_pending_reservations&id='.$id);
 				exit;
 			}
 			$stmt = db()->prepare('DELETE FROM facilities WHERE id=:id');
@@ -145,14 +177,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			exit;
 		}
 	}
+	if ($action === 'delete_reservation') {
+		$reservation_id = (int)($_POST['reservation_id'] ?? 0);
+		$facility_id = (int)($_POST['facility_id'] ?? 0);
+		$admin = current_user();
+		
+		if ($reservation_id && $admin) {
+			// Check if reservation is confirmed and paid
+			$checkStmt = db()->prepare('SELECT id, status, payment_status FROM reservations WHERE id=:id AND status=:status AND payment_status=:payment');
+			$checkStmt->execute([
+				':id' => $reservation_id,
+				':status' => 'confirmed',
+				':payment' => 'paid'
+			]);
+			$reservation = $checkStmt->fetch();
+			
+			if ($reservation) {
+				// Move to history: Mark as deleted and archived
+				$stmt = db()->prepare('UPDATE reservations SET status=:status, cancelled_by=:admin_id, cancelled_at=NOW(), archived_by=:admin_id, archived_at=NOW(), action_notes=:notes WHERE id=:id');
+				$stmt->execute([
+					':status' => 'cancelled',
+					':admin_id' => $admin['id'],
+					':notes' => 'Deleted by admin ' . $admin['full_name'] . ' from facilities page. Moved to history.',
+					':id' => $reservation_id
+				]);
+				header('Location: facilities.php?success=reservation_deleted&facility_id='.$facility_id);
+				exit;
+			} else {
+				header('Location: facilities.php?error=reservation_not_eligible&facility_id='.$facility_id);
+				exit;
+			}
+		}
+	}
 }
 
+// Now include header after POST handling is complete
+require_once __DIR__ . '/../partials/header.php';
+
+$cats = db()->query('SELECT id, name FROM categories ORDER BY name')->fetchAll();
 $rows = db()->query('SELECT f.*, c.name AS category_name FROM facilities f LEFT JOIN categories c ON c.id=f.category_id ORDER BY f.created_at DESC')->fetchAll();
 $images = [];
+$reservations = [];
 foreach ($rows as $r) {
 	$img = db()->prepare('SELECT * FROM facility_images WHERE facility_id=:id ORDER BY is_primary DESC, sort_order, id');
 	$img->execute([':id'=>$r['id']]);
 	$images[$r['id']] = $img->fetchAll();
+	
+	// Get confirmed and paid reservations for this facility
+	$resStmt = db()->prepare("
+		SELECT r.id, r.start_time, r.end_time, r.status, r.payment_status, r.total_amount, 
+		       r.purpose, u.full_name AS user_name, r.or_number, r.payment_verified_at
+		FROM reservations r
+		LEFT JOIN users u ON u.id = r.user_id
+		WHERE r.facility_id = :fid 
+		AND r.status = 'confirmed' 
+		AND r.payment_status = 'paid'
+		ORDER BY r.start_time DESC
+		LIMIT 10
+	");
+	$resStmt->execute([':fid' => $r['id']]);
+	$reservations[$r['id']] = $resStmt->fetchAll();
 }
 ?>
 
@@ -174,6 +258,9 @@ $errorMessage = '';
 		case 'toggled':
 			$successMessage = 'Facility status updated successfully!';
 			break;
+		case 'reservation_deleted':
+			$successMessage = 'Reservation deleted successfully. History has been preserved.';
+			break;
 	}
 }
 if (isset($_GET['error'])) {
@@ -181,211 +268,362 @@ if (isset($_GET['error'])) {
 		case 'has_reservations':
 			$errorMessage = 'Cannot delete facility. It has existing reservations.';
 			break;
+		case 'has_pending_reservations':
+			$errorMessage = 'Cannot delete facility. It has pending reservations that need confirmation. Please handle pending reservations first.';
+			break;
 		case 'has_future_reservations':
 			$errorMessage = 'Cannot deactivate facility. It has future reservations.';
+			break;
+		case 'reservation_not_eligible':
+			$errorMessage = 'Cannot delete reservation. Only confirmed and paid reservations can be deleted.';
+			break;
+		case 'create_failed':
+			$errorMessage = 'Failed to create facility. Please try again.';
 			break;
 	}
 }
 ?>
 
-<div class="mb-6">
-	<div class="flex items-center justify-between mb-2">
-		<h1 class="text-3xl font-bold text-maroon-700">Facilities Management</h1>
-		<div class="flex items-center gap-2 text-sm">
-			<span class="px-3 py-1 rounded-full bg-maroon-100 text-maroon-700 font-medium">
-				<?php echo count($rows); ?> Facilities
-			</span>
+<div class="mb-8">
+	<div class="flex items-center justify-between mb-3">
+		<div>
+			<h1 class="text-3xl font-bold text-maroon-700 mb-2">Facilities Management</h1>
+			<p class="text-neutral-600">Manage all facility listings, configurations, and settings</p>
 		</div>
-	</div>
-	<p class="text-neutral-600">Manage all facility listings, configurations, and settings</p>
-</div>
-
-<div class="bg-white rounded-xl shadow-sm border border-neutral-200 mb-6">
-	<div class="p-6 border-b bg-neutral-50">
-		<h2 class="font-semibold text-neutral-900">Add New Facility</h2>
-		<p class="text-sm text-neutral-600">Create a new facility for users to book</p>
-	</div>
-	<div class="p-6">
-		<form method="post" class="grid grid-cols-1 md:grid-cols-12 gap-4">
-			<input type="hidden" name="action" value="create" />
-			<div class="md:col-span-3">
-				<label class="block text-sm font-medium text-neutral-700 mb-2">Name <span class="text-red-500">*</span></label>
-				<input class="w-full border border-neutral-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="name" required placeholder="Enter facility name" />
+		<div class="flex items-center gap-3">
+			<div class="flex items-center gap-2 text-sm">
+				<?php 
+				$activeCount = 0;
+				$inactiveCount = 0;
+				foreach ($rows as $r) {
+					if ($r['is_active']) {
+						$activeCount++;
+					} else {
+						$inactiveCount++;
+					}
+				}
+				?>
+				<span class="px-3 py-1 rounded-full bg-green-100 text-green-700 font-medium">
+					<?php echo $activeCount; ?> Active
+				</span>
+				<?php if ($inactiveCount > 0): ?>
+				<span class="px-3 py-1 rounded-full bg-red-100 text-red-700 font-medium">
+					<?php echo $inactiveCount; ?> Inactive
+				</span>
+				<?php endif; ?>
+				<span class="px-3 py-1 rounded-full bg-maroon-100 text-maroon-700 font-medium">
+					<?php echo count($rows); ?> Total
+				</span>
 			</div>
-			<div class="md:col-span-3">
-				<label class="block text-sm font-medium text-neutral-700 mb-2">Category</label>
-				<select name="category_id" class="w-full border border-neutral-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent">
-					<option value="">Uncategorized</option>
-					<?php foreach ($cats as $cat): ?>
-					<option value="<?php echo (int)$cat['id']; ?>"><?php echo htmlspecialchars($cat['name']); ?></option>
-					<?php endforeach; ?>
-				</select>
-			</div>
-			<div class="md:col-span-3">
-				<label class="block text-sm font-medium text-neutral-700 mb-2">Hourly Rate (₱)</label>
-				<input type="number" step="0.01" class="w-full border border-neutral-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="hourly_rate" value="0" placeholder="0.00" required />
-			</div>
-			<div class="md:col-span-3">
-				<label class="block text-sm font-medium text-neutral-700 mb-2">Description</label>
-				<input class="w-full border border-neutral-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="description" placeholder="Brief description" />
-			</div>
-			<div class="md:col-span-12 border-t pt-4 mt-2">
-				<button type="button" class="text-sm text-maroon-700 hover:text-maroon-800 font-medium" onclick="toggleAdvancedSettings('create')">
-					<span id="createAdvancedToggle">▶</span> Advanced Settings (Pricing & Time Limits)
-				</button>
-			</div>
-			<div id="createAdvancedSettings" class="md:col-span-12 hidden space-y-4 mt-4 pt-4 border-t">
-				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-					<div>
-						<label class="block text-sm font-medium text-neutral-700 mb-2">Weekend Rate Multiplier</label>
-						<input type="number" step="0.01" min="0.01" class="w-full border border-neutral-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="weekend_rate_multiplier" value="1.00" placeholder="1.00" />
-						<p class="text-xs text-neutral-500 mt-1">1.00 = no change, 1.50 = 50% increase</p>
-					</div>
-					<div>
-						<label class="block text-sm font-medium text-neutral-700 mb-2">Holiday Rate Multiplier</label>
-						<input type="number" step="0.01" min="0.01" class="w-full border border-neutral-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="holiday_rate_multiplier" value="1.00" placeholder="1.00" />
-						<p class="text-xs text-neutral-500 mt-1">Applied when booking date matches a holiday</p>
-					</div>
-					<div>
-						<label class="block text-sm font-medium text-neutral-700 mb-2">Nighttime Rate Multiplier</label>
-						<input type="number" step="0.01" min="0.01" class="w-full border border-neutral-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="nighttime_rate_multiplier" value="1.00" placeholder="1.00" />
-						<p class="text-xs text-neutral-500 mt-1">Applied to nighttime hours only</p>
-					</div>
-				</div>
-				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-					<div>
-						<label class="block text-sm font-medium text-neutral-700 mb-2">Nighttime Start Hour</label>
-						<input type="number" min="0" max="23" class="w-full border border-neutral-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="nighttime_start_hour" value="18" placeholder="18" />
-						<p class="text-xs text-neutral-500 mt-1">24-hour format (0-23)</p>
-					</div>
-					<div>
-						<label class="block text-sm font-medium text-neutral-700 mb-2">Nighttime End Hour</label>
-						<input type="number" min="0" max="23" class="w-full border border-neutral-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="nighttime_end_hour" value="22" placeholder="22" />
-						<p class="text-xs text-neutral-500 mt-1">24-hour format (0-23)</p>
-					</div>
-					<div>
-						<label class="block text-sm font-medium text-neutral-700 mb-2">Booking Start Hour</label>
-						<input type="number" min="0" max="23" class="w-full border border-neutral-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="booking_start_hour" value="5" placeholder="5" />
-						<p class="text-xs text-neutral-500 mt-1">Earliest booking time</p>
-					</div>
-					<div>
-						<label class="block text-sm font-medium text-neutral-700 mb-2">Booking End Hour</label>
-						<input type="number" min="0" max="23" class="w-full border border-neutral-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="booking_end_hour" value="22" placeholder="22" />
-						<p class="text-xs text-neutral-500 mt-1">Latest booking time</p>
-					</div>
-				</div>
-				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-					<div>
-						<label class="block text-sm font-medium text-neutral-700 mb-2">Cooldown Minutes</label>
-						<input type="number" min="0" class="w-full border border-neutral-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="cooldown_minutes" value="0" placeholder="0" />
-						<p class="text-xs text-neutral-500 mt-1">Minutes between reservations (for cleaning/prep)</p>
-					</div>
-				</div>
-			</div>
-			<div class="md:col-span-12">
-				<button class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-maroon-700 text-white hover:bg-maroon-800 transition-colors shadow-sm font-medium" type="submit">
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-					Add Facility
-				</button>
-			</div>
-		</form>
+			<button class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-maroon-700 text-white hover:bg-maroon-800 transition-colors shadow-sm font-medium" onclick="document.getElementById('addFacilityModal').classList.remove('hidden')">
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+				</svg>
+				Add Facility
+			</button>
+		</div>
 	</div>
 </div>
 
 <div class="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden">
+	<div class="px-6 py-4 bg-gradient-to-r from-maroon-50 to-maroon-100 border-b border-maroon-200">
+		<div class="flex items-center justify-between">
+			<h2 class="text-lg font-semibold text-maroon-700">All Facilities</h2>
+			<div class="text-sm text-maroon-600">
+				Showing <?php echo count($rows); ?> facility<?php echo count($rows) !== 1 ? 'ies' : ''; ?>
+			</div>
+		</div>
+	</div>
 	<div class="overflow-x-auto">
 		<table class="min-w-full text-sm">
-			<thead class="bg-neutral-50">
+			<thead class="bg-neutral-50 border-b border-neutral-200">
 				<tr>
-				<th class="text-left px-6 py-4 text-xs font-semibold text-neutral-700 uppercase tracking-wider">Name</th>
+				<th class="text-left px-6 py-4 text-xs font-semibold text-neutral-700 uppercase tracking-wider">Facility</th>
 				<th class="text-left px-6 py-4 text-xs font-semibold text-neutral-700 uppercase tracking-wider">Category</th>
 				<th class="text-left px-6 py-4 text-xs font-semibold text-neutral-700 uppercase tracking-wider">Hourly Rate</th>
-				<th class="text-left px-6 py-4 text-xs font-semibold text-neutral-700 uppercase tracking-wider">Pricing</th>
+				<th class="text-left px-6 py-4 text-xs font-semibold text-neutral-700 uppercase tracking-wider">Pricing Multipliers</th>
 				<th class="text-left px-6 py-4 text-xs font-semibold text-neutral-700 uppercase tracking-wider">Images</th>
 				<th class="text-left px-6 py-4 text-xs font-semibold text-neutral-700 uppercase tracking-wider">Status</th>
-				<th class="text-right px-6 py-4 text-xs font-semibold text-neutral-700 uppercase tracking-wider">Actions</th>
+				<th class="text-left px-6 py-4 text-xs font-semibold text-neutral-700 uppercase tracking-wider">Actions</th>
 				</tr>
 			</thead>
-			<tbody class="divide-y divide-neutral-200">
+			<tbody class="divide-y divide-neutral-200 bg-white">
 				<?php foreach ($rows as $r): ?>
-				<tr class="hover:bg-neutral-50 transition-colors">
-					<td class="px-6 py-4">
-						<div class="font-medium text-neutral-900"><?php echo htmlspecialchars($r['name']); ?></div>
-						<?php if (!empty($r['description'])): ?>
-						<div class="text-xs text-neutral-500 mt-0.5"><?php echo htmlspecialchars(substr($r['description'], 0, 50)) . (strlen($r['description']) > 50 ? '...' : ''); ?></div>
-						<?php endif; ?>
+				<tr class="hover:bg-neutral-50 transition-colors group">
+					<td class="px-6 py-5">
+						<div class="flex items-start gap-3">
+							<div class="flex-shrink-0 w-10 h-10 rounded-lg bg-gradient-to-br from-maroon-100 to-maroon-200 flex items-center justify-center">
+								<svg class="w-5 h-5 text-maroon-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+								</svg>
+							</div>
+							<div class="flex-1 min-w-0">
+								<div class="font-semibold text-neutral-900 text-base"><?php echo htmlspecialchars($r['name']); ?></div>
+								<?php if (!empty($r['description'])): ?>
+								<div class="text-xs text-neutral-500 mt-1 line-clamp-2"><?php echo htmlspecialchars($r['description']); ?></div>
+								<?php endif; ?>
+							</div>
+						</div>
 					</td>
-					<td class="px-6 py-4">
+					<td class="px-6 py-5">
 						<?php if (!empty($r['category_name'])): ?>
-						<span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-neutral-100 text-neutral-700">
+						<span class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-100 text-blue-700 border border-blue-200">
 							<?php echo htmlspecialchars($r['category_name']); ?>
 						</span>
 						<?php else: ?>
-						<span class="text-neutral-400 text-xs">Uncategorized</span>
+						<span class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-neutral-100 text-neutral-500 border border-neutral-200">
+							Uncategorized
+						</span>
 						<?php endif; ?>
 					</td>
-					<td class="px-6 py-4">
-						<span class="font-medium text-neutral-900">₱<?php echo number_format((float)$r['hourly_rate'], 2); ?></span>
+					<td class="px-6 py-5">
+						<div class="flex items-baseline gap-1">
+							<span class="text-lg font-bold text-maroon-700">₱<?php echo number_format((float)$r['hourly_rate'], 2); ?></span>
+							<span class="text-xs text-neutral-500">/hour</span>
+						</div>
 					</td>
-					<td class="px-6 py-4">
-						<div class="flex flex-col gap-1 text-xs">
+					<td class="px-6 py-5">
+						<div class="flex flex-col gap-1.5">
 							<?php if (isset($r['weekend_rate_multiplier']) && $r['weekend_rate_multiplier'] != 1.00): ?>
-							<div class="text-orange-600">Weekend: <?php echo number_format((float)$r['weekend_rate_multiplier'], 2); ?>x</div>
+							<div class="inline-flex items-center gap-1.5">
+								<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700 border border-orange-200">
+									Weekend: <?php echo number_format((float)$r['weekend_rate_multiplier'], 2); ?>x
+								</span>
+							</div>
 							<?php endif; ?>
 							<?php if (isset($r['holiday_rate_multiplier']) && $r['holiday_rate_multiplier'] != 1.00): ?>
-							<div class="text-red-600">Holiday: <?php echo number_format((float)$r['holiday_rate_multiplier'], 2); ?>x</div>
+							<div class="inline-flex items-center gap-1.5">
+								<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 border border-red-200">
+									Holiday: <?php echo number_format((float)$r['holiday_rate_multiplier'], 2); ?>x
+								</span>
+							</div>
 							<?php endif; ?>
 							<?php if (isset($r['nighttime_rate_multiplier']) && $r['nighttime_rate_multiplier'] != 1.00): ?>
-							<div class="text-purple-600">Nighttime: <?php echo number_format((float)$r['nighttime_rate_multiplier'], 2); ?>x</div>
+							<div class="inline-flex items-center gap-1.5">
+								<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700 border border-purple-200">
+									Nighttime: <?php echo number_format((float)$r['nighttime_rate_multiplier'], 2); ?>x
+								</span>
+							</div>
 							<?php endif; ?>
 							<?php if ((!isset($r['weekend_rate_multiplier']) || $r['weekend_rate_multiplier'] == 1.00) && (!isset($r['holiday_rate_multiplier']) || $r['holiday_rate_multiplier'] == 1.00) && (!isset($r['nighttime_rate_multiplier']) || $r['nighttime_rate_multiplier'] == 1.00)): ?>
-							<span class="text-neutral-400">Standard rates</span>
+							<span class="text-xs text-neutral-400 italic">Standard rates only</span>
 							<?php endif; ?>
 						</div>
 					</td>
-					<td class="px-6 py-4">
-						<button class="inline-flex items-center gap-1.5 text-maroon-700 hover:text-maroon-800 font-medium text-sm transition-colors" onclick="document.getElementById('imgs<?php echo (int)$r['id']; ?>').classList.remove('hidden')">
+					<td class="px-6 py-5">
+						<button class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-neutral-300 text-sm text-neutral-700 hover:bg-neutral-50 hover:border-maroon-300 hover:text-maroon-700 transition-colors font-medium" onclick="document.getElementById('imgs<?php echo (int)$r['id']; ?>').classList.remove('hidden')">
 							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-							<?php echo count($images[$r['id']] ?? []); ?> images
+							<?php echo count($images[$r['id']] ?? []); ?> image<?php echo count($images[$r['id']] ?? []) !== 1 ? 's' : ''; ?>
 						</button>
 					</td>
-					<td class="px-6 py-4">
+					<td class="px-6 py-5">
 						<?php if ($r['is_active']): ?>
-						<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-							<div class="w-1.5 h-1.5 bg-green-600 rounded-full mr-1.5"></div>
+						<span class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 border border-green-200">
+							<div class="w-2 h-2 bg-green-600 rounded-full mr-2 animate-pulse"></div>
 							Active
 						</span>
 						<?php else: ?>
-						<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-							<div class="w-1.5 h-1.5 bg-red-600 rounded-full mr-1.5"></div>
+						<span class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-200">
+							<div class="w-2 h-2 bg-red-600 rounded-full mr-2"></div>
 							Inactive
 						</span>
 						<?php endif; ?>
 					</td>
-					<td class="px-6 py-4 text-right">
-						<div class="flex gap-2 justify-end">
-							<button class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-maroon-300 text-sm hover:bg-maroon-50 hover:border-maroon-400 hover:text-maroon-700 transition-colors" onclick="openEditModal(<?php echo htmlspecialchars(json_encode($r)); ?>)">
+					<td class="px-6 py-5">
+						<div class="flex flex-col gap-2 items-end min-w-[140px]">
+							<button class="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-maroon-300 text-sm hover:bg-maroon-50 hover:border-maroon-400 hover:text-maroon-700 transition-colors font-medium shadow-sm" onclick="openEditModal(<?php echo htmlspecialchars(json_encode($r)); ?>)">
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+								</svg>
 								Edit
 							</button>
-							<form method="post" class="inline">
+							<form method="post" class="w-full">
 								<input type="hidden" name="action" value="toggle_active" />
 								<input type="hidden" name="id" value="<?php echo (int)$r['id']; ?>" />
-								<button class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-300 text-sm hover:bg-neutral-50 transition-colors" type="submit">
+								<button class="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-300 text-sm hover:bg-neutral-50 transition-colors font-medium" type="submit">
+									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
+									</svg>
 									<?php echo $r['is_active'] ? 'Deactivate' : 'Activate'; ?>
 								</button>
 							</form>
-							<button class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-300 text-sm hover:bg-maroon-50 hover:border-maroon-300 hover:text-maroon-700 transition-colors" onclick="document.getElementById('addImg<?php echo (int)$r['id']; ?>').classList.remove('hidden')">
+							<button class="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-neutral-300 text-sm hover:bg-maroon-50 hover:border-maroon-300 hover:text-maroon-700 transition-colors font-medium" onclick="document.getElementById('addImg<?php echo (int)$r['id']; ?>').classList.remove('hidden')">
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+								</svg>
 								Add Images
 							</button>
-							<button class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-300 text-sm hover:bg-red-50 hover:border-red-400 hover:text-red-700 transition-colors" onclick="openDeleteModal(<?php echo (int)$r['id']; ?>, '<?php echo htmlspecialchars(addslashes($r['name'])); ?>')">
+							<?php if (!empty($reservations[$r['id']])): ?>
+							<button class="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-blue-300 text-sm hover:bg-blue-50 hover:border-blue-400 hover:text-blue-700 transition-colors font-medium" onclick="document.getElementById('reservations<?php echo (int)$r['id']; ?>').classList.remove('hidden')">
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+								</svg>
+								Reservations (<?php echo count($reservations[$r['id']]); ?>)
+							</button>
+							<?php endif; ?>
+							<button class="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-red-300 text-sm hover:bg-red-50 hover:border-red-400 hover:text-red-700 transition-colors font-medium" onclick="openDeleteModal(<?php echo (int)$r['id']; ?>, '<?php echo htmlspecialchars(addslashes($r['name'])); ?>')">
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+								</svg>
 								Delete
 							</button>
 						</div>
 					</td>
 				</tr>
+				<?php if (!empty($reservations[$r['id']])): ?>
+				<tr>
+					<td colspan="7" class="px-6 py-3 bg-gradient-to-r from-blue-50 to-blue-100 border-t border-blue-200">
+						<div class="flex items-center gap-2 text-xs text-blue-700">
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+							</svg>
+							<strong>Confirmed & Paid Reservations:</strong> <?php echo count($reservations[$r['id']]); ?> reservation<?php echo count($reservations[$r['id']]) !== 1 ? 's' : ''; ?> found
+						</div>
+					</td>
+				</tr>
+				<?php endif; ?>
 				<?php endforeach; ?>
 			</tbody>
 		</table>
+	</div>
+</div>
+
+<!-- Add Facility Modal -->
+<div id="addFacilityModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+	<div class="absolute inset-0 bg-black/50 backdrop-blur-sm close-modal" onclick="document.getElementById('addFacilityModal').classList.add('hidden')"></div>
+	<div class="relative max-w-6xl mx-auto my-8 bg-white rounded-xl shadow-2xl border border-neutral-200 flex flex-col max-h-[90vh]">
+		<div class="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-maroon-50 to-maroon-100 rounded-t-xl sticky top-0 z-10">
+			<div>
+				<h3 class="text-xl font-semibold text-maroon-700">Add New Facility</h3>
+				<p class="text-sm text-maroon-600 mt-0.5">Create a new facility for users to book</p>
+			</div>
+			<button class="text-neutral-500 hover:text-neutral-700 hover:bg-neutral-200 rounded-full p-1.5 transition-colors close-modal" onclick="document.getElementById('addFacilityModal').classList.add('hidden')">
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+				</svg>
+			</button>
+		</div>
+		<div class="flex-1 overflow-y-auto">
+			<form method="post" id="addFacilityForm" class="p-6">
+				<input type="hidden" name="action" value="create" />
+				
+				<!-- Basic Information -->
+				<div class="mb-8">
+					<h4 class="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Basic Information</h4>
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+						<div>
+							<label class="block text-sm font-medium text-neutral-700 mb-2">Facility Name <span class="text-red-500">*</span></label>
+							<input class="w-full border border-neutral-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="name" required placeholder="Enter facility name" />
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-neutral-700 mb-2">Category</label>
+							<select name="category_id" class="w-full border border-neutral-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent">
+								<option value="">Uncategorized</option>
+								<?php foreach ($cats as $cat): ?>
+								<option value="<?php echo (int)$cat['id']; ?>"><?php echo htmlspecialchars($cat['name']); ?></option>
+								<?php endforeach; ?>
+							</select>
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-neutral-700 mb-2">Hourly Rate (₱) <span class="text-red-500">*</span></label>
+							<input type="number" step="0.01" class="w-full border border-neutral-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="hourly_rate" value="0" placeholder="0.00" required />
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-neutral-700 mb-2">Description</label>
+							<textarea class="w-full border border-neutral-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="description" rows="3" placeholder="Brief description of the facility"></textarea>
+						</div>
+					</div>
+				</div>
+
+				<!-- Advanced Settings -->
+				<div class="mb-8">
+					<h4 class="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Pricing & Time Settings</h4>
+					<div class="space-y-6">
+						<div>
+							<h5 class="text-sm font-semibold text-neutral-800 mb-3">Rate Multipliers</h5>
+							<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+								<div>
+									<label class="block text-sm font-medium text-neutral-700 mb-2">Weekend Rate Multiplier</label>
+									<input type="number" step="0.01" min="0.01" class="w-full border border-neutral-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="weekend_rate_multiplier" value="1.00" placeholder="1.00" />
+									<p class="text-xs text-neutral-500 mt-1.5">1.00 = no change, 1.50 = 50% increase</p>
+								</div>
+								<div>
+									<label class="block text-sm font-medium text-neutral-700 mb-2">Holiday Rate Multiplier</label>
+									<input type="number" step="0.01" min="0.01" class="w-full border border-neutral-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="holiday_rate_multiplier" value="1.00" placeholder="1.00" />
+									<p class="text-xs text-neutral-500 mt-1.5">Applied when booking date matches a holiday</p>
+								</div>
+								<div>
+									<label class="block text-sm font-medium text-neutral-700 mb-2">Nighttime Rate Multiplier</label>
+									<input type="number" step="0.01" min="0.01" class="w-full border border-neutral-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="nighttime_rate_multiplier" value="1.00" placeholder="1.00" />
+									<p class="text-xs text-neutral-500 mt-1.5">Applied to nighttime hours only</p>
+								</div>
+							</div>
+						</div>
+						<div>
+							<h5 class="text-sm font-semibold text-neutral-800 mb-3">Time Configuration</h5>
+							<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+								<div>
+									<label class="block text-sm font-medium text-neutral-700 mb-2">Nighttime Start Hour</label>
+									<input type="number" min="0" max="23" class="w-full border border-neutral-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="nighttime_start_hour" value="18" placeholder="18" />
+									<p class="text-xs text-neutral-500 mt-1.5">24-hour format (0-23)</p>
+								</div>
+								<div>
+									<label class="block text-sm font-medium text-neutral-700 mb-2">Nighttime End Hour</label>
+									<input type="number" min="0" max="23" class="w-full border border-neutral-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="nighttime_end_hour" value="22" placeholder="22" />
+									<p class="text-xs text-neutral-500 mt-1.5">24-hour format (0-23)</p>
+								</div>
+								<div>
+									<label class="block text-sm font-medium text-neutral-700 mb-2">Booking Start Hour</label>
+									<input type="number" min="0" max="23" class="w-full border border-neutral-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="booking_start_hour" value="5" placeholder="5" />
+									<p class="text-xs text-neutral-500 mt-1.5">Earliest booking time</p>
+								</div>
+								<div>
+									<label class="block text-sm font-medium text-neutral-700 mb-2">Booking End Hour</label>
+									<input type="number" min="0" max="23" class="w-full border border-neutral-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="booking_end_hour" value="22" placeholder="22" />
+									<p class="text-xs text-neutral-500 mt-1.5">Latest booking time</p>
+								</div>
+							</div>
+						</div>
+						<div>
+							<h5 class="text-sm font-semibold text-neutral-800 mb-3">Reservation Settings</h5>
+							<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+								<div>
+									<label class="block text-sm font-medium text-neutral-700 mb-2">Cooldown Minutes</label>
+									<input type="number" min="0" class="w-full border border-neutral-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-transparent" name="cooldown_minutes" value="0" placeholder="0" />
+									<p class="text-xs text-neutral-500 mt-1.5">Minutes between reservations (for cleaning/prep)</p>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Pricing Options -->
+				<div class="mb-8">
+					<h4 class="text-lg font-semibold text-neutral-900 mb-4 pb-2 border-b border-neutral-200">Pricing Options (Optional)</h4>
+					<div class="bg-gradient-to-br from-neutral-50 to-neutral-100 rounded-lg p-5 border border-neutral-200">
+						<p class="text-sm text-neutral-600 mb-4">Add optional pricing add-ons for this facility (e.g., "With Lights", "Sound System", etc.)</p>
+						<div id="pricingOptionsContainer" class="space-y-4">
+							<!-- Pricing options will be added here dynamically -->
+						</div>
+						<button type="button" onclick="addPricingOption()" class="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-maroon-700 text-white hover:bg-maroon-800 transition-colors text-sm font-medium shadow-sm">
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+							</svg>
+							Add Pricing Option
+						</button>
+					</div>
+				</div>
+			</form>
+		</div>
+		<div class="px-6 py-4 border-t bg-neutral-50 rounded-b-xl sticky bottom-0 flex justify-end gap-3">
+			<button class="px-5 py-2.5 rounded-lg border border-neutral-300 text-neutral-700 hover:bg-neutral-100 transition-colors font-medium close-modal" type="button" onclick="document.getElementById('addFacilityModal').classList.add('hidden')">Cancel</button>
+			<button class="px-5 py-2.5 rounded-lg bg-maroon-700 text-white hover:bg-maroon-800 transition-colors shadow-sm font-medium" type="submit" form="addFacilityForm">
+				<svg class="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+				</svg>
+				Create Facility
+			</button>
+		</div>
 	</div>
 </div>
 
@@ -444,6 +682,87 @@ if (isset($_GET['error'])) {
 		</div>
 	</div>
 </div>
+<?php endforeach; ?>
+
+<!-- Reservations Modal for each facility -->
+<?php foreach ($rows as $r): ?>
+<?php if (!empty($reservations[$r['id']])): ?>
+<div id="reservations<?php echo (int)$r['id']; ?>" class="hidden fixed inset-0 z-50">
+	<div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="document.getElementById('reservations<?php echo (int)$r['id']; ?>').classList.add('hidden')"></div>
+	<div class="relative max-w-4xl mx-auto mt-16 bg-white rounded-xl shadow-xl border border-neutral-200 max-h-[80vh] overflow-hidden flex flex-col">
+		<div class="flex items-center justify-between px-5 py-4 border-b bg-neutral-50">
+			<h3 class="font-semibold text-maroon-700">Confirmed & Paid Reservations - <?php echo htmlspecialchars($r['name']); ?></h3>
+			<button class="h-8 w-8 inline-flex items-center justify-center rounded-full hover:bg-neutral-200 text-neutral-600" onclick="document.getElementById('reservations<?php echo (int)$r['id']; ?>').classList.add('hidden')">✕</button>
+		</div>
+		<div class="flex-1 overflow-y-auto p-5">
+			<div class="space-y-3">
+				<?php foreach ($reservations[$r['id']] as $res): ?>
+				<div class="bg-white border border-neutral-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+					<div class="flex items-start justify-between">
+						<div class="flex-1">
+							<div class="flex items-center gap-3 mb-2">
+								<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+									Confirmed & Paid
+								</span>
+								<span class="text-sm font-semibold text-neutral-900">Reservation #<?php echo (int)$res['id']; ?></span>
+							</div>
+							<div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+								<div>
+									<div class="text-xs text-neutral-500 mb-1">User</div>
+									<div class="font-medium text-neutral-900"><?php echo htmlspecialchars($res['user_name'] ?? 'Unknown'); ?></div>
+								</div>
+								<div>
+									<div class="text-xs text-neutral-500 mb-1">Date & Time</div>
+									<div class="font-medium text-neutral-900">
+										<?php 
+										$start = new DateTime($res['start_time']);
+										$end = new DateTime($res['end_time']);
+										echo $start->format('M d, Y') . ' ' . $start->format('g:i A') . ' - ' . $end->format('g:i A');
+										?>
+									</div>
+								</div>
+								<div>
+									<div class="text-xs text-neutral-500 mb-1">Amount</div>
+									<div class="font-medium text-neutral-900">₱<?php echo number_format((float)$res['total_amount'], 2); ?></div>
+								</div>
+								<div>
+									<div class="text-xs text-neutral-500 mb-1">OR Number</div>
+									<div class="font-medium text-neutral-900"><?php echo htmlspecialchars($res['or_number'] ?? 'N/A'); ?></div>
+								</div>
+								<?php if (!empty($res['purpose'])): ?>
+								<div class="md:col-span-2">
+									<div class="text-xs text-neutral-500 mb-1">Purpose</div>
+									<div class="text-neutral-700"><?php echo htmlspecialchars($res['purpose']); ?></div>
+								</div>
+								<?php endif; ?>
+							</div>
+						</div>
+						<div class="ml-4">
+							<form method="post" onsubmit="return confirm('Are you sure you want to delete this reservation? The history will be preserved but it will be marked as cancelled.');">
+								<input type="hidden" name="action" value="delete_reservation" />
+								<input type="hidden" name="reservation_id" value="<?php echo (int)$res['id']; ?>" />
+								<input type="hidden" name="facility_id" value="<?php echo (int)$r['id']; ?>" />
+								<button type="submit" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-red-300 text-sm hover:bg-red-50 hover:border-red-400 hover:text-red-700 transition-colors">
+									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+									</svg>
+									Delete
+								</button>
+							</form>
+						</div>
+					</div>
+				</div>
+				<?php endforeach; ?>
+			</div>
+			<?php if (count($reservations[$r['id']]) >= 10): ?>
+			<div class="mt-4 text-center text-sm text-neutral-500">
+				Showing latest 10 reservations. <a href="<?php echo base_url('admin/reservations.php'); ?>?facility_id=<?php echo (int)$r['id']; ?>&status=confirmed&payment=paid" class="text-maroon-700 hover:text-maroon-800 font-medium">View all</a>
+			</div>
+			<?php endif; ?>
+		</div>
+	</div>
+</div>
+<?php endif; ?>
 <?php endforeach; ?>
 
 <!-- Delete Facility Confirmation Modal -->
@@ -612,16 +931,60 @@ if (isset($_GET['error'])) {
 <div id="toastContainer" class="fixed top-4 right-4 z-50 space-y-2"></div>
 
 <script>
-function toggleAdvancedSettings(prefix) {
-	const settings = document.getElementById(prefix + 'AdvancedSettings');
-	const toggle = document.getElementById(prefix + 'AdvancedToggle');
-	if (settings.classList.contains('hidden')) {
-		settings.classList.remove('hidden');
-		toggle.textContent = '▼';
-	} else {
-		settings.classList.add('hidden');
-		toggle.textContent = '▶';
+// Reset form when modal is closed
+document.getElementById('addFacilityModal')?.addEventListener('click', function(e) {
+	if (e.target === this || e.target.classList.contains('close-modal')) {
+		document.getElementById('addFacilityForm')?.reset();
+		document.getElementById('pricingOptionsContainer').innerHTML = '';
+		pricingOptionCount = 0;
 	}
+});
+
+let pricingOptionCount = 0;
+function addPricingOption() {
+	pricingOptionCount++;
+	const container = document.getElementById('pricingOptionsContainer');
+	const optionDiv = document.createElement('div');
+	optionDiv.className = 'bg-white border border-neutral-200 rounded-lg p-4';
+	optionDiv.innerHTML = `
+		<div class="flex items-start justify-between mb-3">
+			<h5 class="text-sm font-medium text-neutral-900">Pricing Option #${pricingOptionCount}</h5>
+			<button type="button" onclick="this.closest('div').remove()" class="text-red-600 hover:text-red-700 text-sm">Remove</button>
+		</div>
+		<div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+			<div class="md:col-span-4">
+				<label class="block text-xs font-medium text-neutral-700 mb-1">Name</label>
+				<input type="text" name="pricing_options[${pricingOptionCount}][name]" class="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-maroon-500" placeholder="e.g., With Lights" />
+			</div>
+			<div class="md:col-span-3">
+				<label class="block text-xs font-medium text-neutral-700 mb-1">Type</label>
+				<select name="pricing_options[${pricingOptionCount}][pricing_type]" class="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-maroon-500">
+					<option value="hour">Per Hour</option>
+					<option value="day">Per Day</option>
+					<option value="session">Per Session</option>
+				</select>
+			</div>
+			<div class="md:col-span-3">
+				<label class="block text-xs font-medium text-neutral-700 mb-1">Price (₱)</label>
+				<input type="number" step="0.01" name="pricing_options[${pricingOptionCount}][price_per_unit]" class="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-maroon-500" value="0" />
+			</div>
+			<div class="md:col-span-2">
+				<label class="block text-xs font-medium text-neutral-700 mb-1">Order</label>
+				<input type="number" name="pricing_options[${pricingOptionCount}][sort_order]" class="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-maroon-500" value="0" />
+			</div>
+			<div class="md:col-span-12">
+				<label class="block text-xs font-medium text-neutral-700 mb-1">Description (Optional)</label>
+				<textarea name="pricing_options[${pricingOptionCount}][description]" rows="2" class="w-full border border-neutral-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-maroon-500" placeholder="Brief description"></textarea>
+			</div>
+			<div class="md:col-span-12">
+				<label class="inline-flex items-center gap-2 cursor-pointer">
+					<input type="checkbox" name="pricing_options[${pricingOptionCount}][is_active]" checked class="h-4 w-4 accent-maroon-700" />
+					<span class="text-xs text-neutral-700">Active</span>
+				</label>
+			</div>
+		</div>
+	`;
+	container.appendChild(optionDiv);
 }
 
 function openEditModal(facility) {
@@ -707,6 +1070,9 @@ document.addEventListener('keydown', (e) => {
 		<?php foreach ($rows as $r): ?>
 		document.getElementById('addImg<?php echo (int)$r['id']; ?>').classList.add('hidden');
 		document.getElementById('imgs<?php echo (int)$r['id']; ?>').classList.add('hidden');
+		<?php if (!empty($reservations[$r['id']])): ?>
+		document.getElementById('reservations<?php echo (int)$r['id']; ?>').classList.add('hidden');
+		<?php endif; ?>
 		<?php endforeach; ?>
 	}
 });

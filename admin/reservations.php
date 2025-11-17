@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../partials/header.php';
+// Handle POST requests BEFORE including header to prevent "headers already sent" errors
 require_once __DIR__ . '/../lib/db.php';
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/audit.php';
@@ -49,6 +49,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		}
 	}
 }
+
+// Now include header after POST handling is complete
+require_once __DIR__ . '/../partials/header.php';
 
 // Filters
 $filterStatus = $_GET['status'] ?? 'all';

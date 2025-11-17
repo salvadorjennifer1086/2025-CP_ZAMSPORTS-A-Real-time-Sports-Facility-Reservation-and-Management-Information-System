@@ -1,50 +1,88 @@
 <?php
-require_once __DIR__ . '/../partials/header.php';
 require_once __DIR__ . '/../lib/db.php';
 require_once __DIR__ . '/../lib/auth.php';
-require_role(['admin','staff']);
+require_role(['admin']);
 
 $me = current_user();
 $error = '';
+$successMessage = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
-    if ($action === 'create_user') {
-        if ($me['role'] !== 'admin') {
-            $error = 'Only admin can add users.';
-        } else {
-            $role = $_POST['role'] ?? 'staff';
-            if (!in_array($role, ['staff','admin'], true)) { $role = 'staff'; }
-            $full_name = trim($_POST['full_name'] ?? '');
-            $username = trim($_POST['username'] ?? '');
-            $email = trim($_POST['email'] ?? '');
-            $password = $_POST['password'] ?? '';
-            if ($full_name && $username && $email && $password) {
-                try {
-                    $stmt = db()->prepare('INSERT INTO users (username,email,password,full_name,organization,role) VALUES (:u,:e,:p,:f,NULL,\'' . "{$role}" . '\')');
-                    $stmt->execute([
-                        ':u' => $username,
-                        ':e' => $email,
-                        ':p' => password_hash($password, PASSWORD_BCRYPT),
-                        ':f' => $full_name,
-                    ]);
-                    header('Location: users.php');
-                    exit;
-                } catch (Throwable $t) {
-                    $error = 'Failed to create user: ' . $t->getMessage();
-                }
-            } else {
-                $error = 'Please fill all required fields.';
-            }
-        }
-    }
+	$action = $_POST['action'] ?? '';
+	if ($action === 'create_user') {
+		$role = $_POST['role'] ?? 'staff';
+		if (!in_array($role, ['staff','admin'], true)) { $role = 'staff'; }
+		$full_name = trim($_POST['full_name'] ?? '');
+		$username = trim($_POST['username'] ?? '');
+		$email = trim($_POST['email'] ?? '');
+		$password = $_POST['password'] ?? '';
+		if ($full_name && $username && $email && $password) {
+			try {
+				$stmt = db()->prepare('INSERT INTO users (username,email,password,full_name,organization,role) VALUES (:u,:e,:p,:f,NULL,\'' . "{$role}" . '\')');
+				$stmt->execute([
+					':u' => $username,
+					':e' => $email,
+					':p' => password_hash($password, PASSWORD_BCRYPT),
+					':f' => $full_name,
+				]);
+				header('Location: users.php?success=created');
+				exit;
+			} catch (Throwable $t) {
+				$error = 'Failed to create user: ' . $t->getMessage();
+			}
+		} else {
+			$error = 'Please fill all required fields.';
+		}
+	}
+	if ($action === 'delete_staff') {
+		$id = (int)($_POST['id'] ?? 0);
+		if ($id > 0) {
+			$stmt = db()->prepare('SELECT id, full_name, role FROM users WHERE id=:id');
+			$stmt->execute([':id' => $id]);
+			$target = $stmt->fetch(PDO::FETCH_ASSOC);
+			if ($target && $target['role'] === 'staff') {
+				try {
+					$deleteStmt = db()->prepare('DELETE FROM users WHERE id=:id AND role=\'staff\'');
+					$deleteStmt->execute([':id' => $id]);
+					header('Location: users.php?success=staff_deleted');
+					exit;
+				} catch (Throwable $t) {
+					$error = 'Failed to delete staff: ' . $t->getMessage();
+				}
+			} else {
+				$error = 'Selected user could not be deleted.';
+			}
+		} else {
+			$error = 'Invalid staff selection.';
+		}
+	}
 }
 
-$staff = db()->query("SELECT id, username, email, full_name, role, created_at FROM users WHERE role IN ('staff') ORDER BY created_at DESC")->fetchAll();
-$admins = [];
-if ($me['role'] === 'admin') {
-	$admins = db()->query("SELECT id, username, email, full_name, role, created_at FROM users WHERE role IN ('admin') ORDER BY created_at DESC")->fetchAll();
+if (isset($_GET['success'])) {
+	switch ($_GET['success']) {
+		case 'created':
+			$successMessage = 'User created successfully.';
+			break;
+		case 'staff_deleted':
+			$successMessage = 'Staff account deleted.';
+			break;
+	}
 }
+if (isset($_GET['error'])) {
+	switch ($_GET['error']) {
+		case 'create_failed':
+			$error = 'Unable to create user. Please try again.';
+			break;
+		case 'delete_failed':
+			$error = 'Unable to delete staff. Please try again.';
+			break;
+	}
+}
+
+$staff = db()->query("SELECT id, username, email, full_name, role, created_at FROM users WHERE role = 'staff' ORDER BY created_at DESC")->fetchAll();
+$admins = db()->query("SELECT id, username, email, full_name, role, created_at FROM users WHERE role = 'admin' ORDER BY created_at DESC")->fetchAll();
+
+require_once __DIR__ . '/../partials/header.php';
 ?>
 
 <div class="mb-6">
@@ -52,11 +90,13 @@ if ($me['role'] === 'admin') {
 	<p class="text-neutral-600">Manage system users, staff, and administrators</p>
 </div>
 
+<?php if ($successMessage): ?>
+<div class="mb-3 p-3 rounded bg-green-50 text-green-800 border border-green-200"><?php echo htmlspecialchars($successMessage); ?></div>
+<?php endif; ?>
 <?php if ($error): ?>
 <div class="mb-3 p-3 rounded bg-maroon-50 text-maroon-700 border border-maroon-200"><?php echo htmlspecialchars($error); ?></div>
 <?php endif; ?>
 
-<?php if ($me['role'] === 'admin'): ?>
 <div class="bg-white rounded shadow mb-4">
     <div class="p-4 flex items-center justify-between">
         <h2 class="font-semibold">Users</h2>
@@ -104,9 +144,7 @@ if ($me['role'] === 'admin') {
     </div>
     
 </div>
-<?php endif; ?>
 
-<?php if ($me['role'] === 'admin'): ?>
 <div class="bg-white rounded shadow mb-4">
 	<div class="p-4">
 		<h2 class="font-semibold mb-2">Admins</h2>
@@ -130,7 +168,6 @@ if ($me['role'] === 'admin') {
 		</div>
 	</div>
 </div>
-<?php endif; ?>
 
 <div class="bg-white rounded shadow">
 	<div class="p-4">
@@ -138,7 +175,14 @@ if ($me['role'] === 'admin') {
 		<div class="overflow-x-auto">
 			<table class="min-w-full text-sm">
 				<thead class="bg-neutral-50">
-					<tr><th class="text-left px-3 py-2">Full Name</th><th class="text-left px-3 py-2">Username</th><th class="text-left px-3 py-2">Email</th><th class="text-left px-3 py-2">Role</th><th class="text-left px-3 py-2">Created</th></tr>
+					<tr>
+						<th class="text-left px-3 py-2">Full Name</th>
+						<th class="text-left px-3 py-2">Username</th>
+						<th class="text-left px-3 py-2">Email</th>
+						<th class="text-left px-3 py-2">Role</th>
+						<th class="text-left px-3 py-2">Created</th>
+						<th class="text-right px-3 py-2">Actions</th>
+					</tr>
 				</thead>
 				<tbody>
 					<?php foreach ($staff as $u): ?>
@@ -148,6 +192,13 @@ if ($me['role'] === 'admin') {
 						<td class="px-3 py-2"><?php echo htmlspecialchars($u['email']); ?></td>
 						<td class="px-3 py-2 capitalize"><?php echo htmlspecialchars($u['role']); ?></td>
 						<td class="px-3 py-2"><?php echo (new DateTime($u['created_at']))->format('Y-m-d H:i'); ?></td>
+						<td class="px-3 py-2 text-right">
+							<form method="post" onsubmit="return confirm('Delete this staff account? This cannot be undone.');" class="inline-block">
+								<input type="hidden" name="action" value="delete_staff" />
+								<input type="hidden" name="id" value="<?php echo (int)$u['id']; ?>" />
+								<button class="px-3 py-1.5 rounded border border-red-200 text-red-700 hover:bg-red-50 text-xs font-medium" type="submit">Delete</button>
+							</form>
+						</td>
 					</tr>
 					<?php endforeach; ?>
 				</tbody>
