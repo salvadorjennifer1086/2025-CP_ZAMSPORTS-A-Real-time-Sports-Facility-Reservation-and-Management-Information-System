@@ -114,9 +114,17 @@ $categories = db()->query('SELECT id, name FROM categories ORDER BY name')->fetc
 	}
 	.fc-daygrid-day-frame {
 		transition: background-color 0.2s ease;
+		cursor: pointer;
 	}
 	.fc-daygrid-day:hover .fc-daygrid-day-frame {
 		background-color: #f9fafb;
+		box-shadow: inset 0 0 0 2px rgba(127, 29, 29, 0.2);
+	}
+	.fc-daygrid-day {
+		cursor: pointer;
+	}
+	.fc-timegrid-day {
+		cursor: pointer;
 	}
 	.fc-col-header-cell {
 		background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
@@ -359,6 +367,15 @@ $categories = db()->query('SELECT id, name FROM categories ORDER BY name')->fetc
 				<span class="text-neutral-700 font-medium">👥 Others' Pending</span>
 			</div>
 		</div>
+		<div class="mt-4 pt-4 border-t border-neutral-200">
+			<div class="flex items-center gap-2 text-sm text-maroon-700">
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+				</svg>
+				<span class="font-semibold">💡 Tip:</span>
+				<span>Click on any day to view detailed reservations, pending bookings, and available time for that date.</span>
+			</div>
+		</div>
 	</div>
 	
 	<!-- Calendar Container -->
@@ -393,53 +410,150 @@ $categories = db()->query('SELECT id, name FROM categories ORDER BY name')->fetc
 	</div>
 </div>
 
-<!-- FullCalendar CSS - Will be loaded with fallback -->
+<!-- Day Details Modal -->
+<div id="dayModal" class="hidden fixed inset-0 z-50">
+	<div class="absolute inset-0 bg-black/60 backdrop-blur-sm modal-backdrop" onclick="closeDayModal()"></div>
+	<div class="relative max-w-6xl mx-auto mt-8 mb-8 bg-white rounded-2xl shadow-2xl border-2 border-neutral-200 max-h-[90vh] overflow-hidden flex flex-col animate-fade-in">
+		<div class="flex items-center justify-between px-8 py-5 border-b bg-gradient-to-r from-maroon-600 via-maroon-700 to-maroon-800 text-white">
+			<div class="flex items-center gap-3">
+				<div class="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+					<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+					</svg>
+				</div>
+				<h3 class="text-2xl font-bold" id="dayModalTitle">Day Details</h3>
+			</div>
+			<button class="h-10 w-10 inline-flex items-center justify-center rounded-xl hover:bg-white/20 text-white transition-all hover:scale-110" onclick="closeDayModal()">
+				<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+				</svg>
+			</button>
+		</div>
+		<div class="flex-1 overflow-y-auto p-8 bg-gradient-to-b from-neutral-50 to-white">
+			<div id="dayModalContent">
+				<div class="flex items-center justify-center py-12">
+					<svg class="animate-spin h-8 w-8 text-maroon-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+					</svg>
+					<span class="ml-3 text-maroon-700 font-semibold">Loading day details...</span>
+				</div>
+			</div>
+		</div>
+		<div class="px-8 py-5 border-t flex justify-end bg-gradient-to-r from-neutral-50 to-white">
+			<button class="px-6 py-3 rounded-xl bg-gradient-to-r from-maroon-600 to-maroon-700 text-white hover:from-maroon-700 hover:to-maroon-800 transition-all font-semibold shadow-lg" onclick="closeDayModal()">Close</button>
+		</div>
+	</div>
+</div>
+
+<!-- FullCalendar CSS - Inline fallback always available, CDN loads on top if available -->
+<style id="fullcalendar-fallback-css">
+/* Critical FullCalendar CSS Fallback - Always loaded as backup */
+.fc { direction: ltr; text-align: left; font-size: 1em; }
+.fc-rtl { text-align: right; }
+.fc-button-group { display: inline-block; }
+.fc .fc-button-group > * { float: left; margin-left: 0; }
+.fc .fc-button-group > :first-child { margin-left: 0; }
+.fc-icon { display: inline-block; width: 1em; height: 1em; line-height: 1em; font-size: 1em; text-align: center; overflow: hidden; font-family: "Courier New", Courier, monospace; }
+.fc-icon:after { position: relative; }
+.fc-icon-left-single-arrow:after { content: "\2039"; font-weight: bold; font-size: 200%; top: -7%; }
+.fc-icon-right-single-arrow:after { content: "\203A"; font-weight: bold; font-size: 200%; top: -7%; }
+.fc-icon-left-double-arrow:after { content: "\AB"; font-size: 160%; top: -7%; }
+.fc-icon-right-double-arrow:after { content: "\BB"; font-size: 160%; top: -7%; }
+.fc-icon-x:after { content: "\D7"; font-size: 200%; top: -6%; }
+.fc button { margin: 0; border: 1px solid; border-radius: 4px; padding: 0.4em 0.65em; font-size: 1em; cursor: pointer; }
+.fc button:focus { z-index: 5; }
+.fc table { width: 100%; box-sizing: border-box; table-layout: fixed; border-collapse: collapse; border-spacing: 0; font-size: 1em; }
+.fc th { text-align: center; border-bottom-width: 1px; padding: 0.5em; vertical-align: top; }
+.fc td { border-style: solid; border-width: 1px; padding: 0; vertical-align: top; }
+.fc-daygrid-day { padding: 4px; }
+.fc-daygrid-day-frame { position: relative; min-height: 100px; }
+.fc-daygrid-day-top { display: flex; flex-direction: row-reverse; }
+.fc-daygrid-day-number { padding: 4px; }
+.fc-daygrid-day-events { margin-top: 1px; }
+.fc-daygrid-event { margin: 1px 2px 0; padding: 0 1px; border-radius: 3px; font-size: 0.85em; cursor: pointer; position: relative; white-space: nowrap; overflow: hidden; }
+.fc-daygrid-event-dot { margin: 0 4px; }
+.fc-daygrid-event-harness { position: relative; }
+.fc-daygrid-event-harness-abs { position: absolute; }
+.fc-daygrid-event-title { padding: 2px 0; }
+.fc-timegrid { position: relative; min-height: 100%; }
+.fc-timegrid-slot { height: 1.5em; border-bottom: 0; }
+.fc-timegrid-slot-label { vertical-align: top; }
+.fc-timegrid-event { position: absolute; z-index: 1; }
+.fc-timegrid-event-frame { position: relative; display: flex; align-items: flex-start; }
+.fc-timegrid-event-cushion { padding: 2px 4px; white-space: nowrap; overflow: hidden; }
+.fc-event { border: 1px solid #3788d8; background-color: #3788d8; color: #fff; display: block; }
+.fc-event:hover { background-color: #2878c8; }
+.fc-event-title { font-weight: bold; padding: 0 1px; }
+.fc-toolbar { display: flex; justify-content: space-between; align-items: center; }
+.fc-toolbar-title { margin: 0 1em; font-size: 1.75em; font-weight: bold; }
+.fc-toolbar-chunk { display: flex; align-items: center; }
+.fc-col-header-cell { padding: 0.5em; }
+.fc-day-today { background-color: rgba(255, 220, 40, 0.15); }
+</style>
+
 <script>
-// Load FullCalendar CSS with fallback CDNs
-const cssCDNs = [
-	'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/main.min.css',
-	'https://unpkg.com/fullcalendar@6.1.10/main.min.css',
-	'https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/6.1.10/main.min.css'
-];
-
-let cssCdnIndex = 0;
-
-function loadFullCalendarCSS() {
-	if (cssCdnIndex >= cssCDNs.length) {
-		console.error('Failed to load FullCalendar CSS from all CDNs');
-		// Add inline fallback styles to prevent layout issues
-		const fallbackStyle = document.createElement('style');
-		fallbackStyle.textContent = `
-			#calendar { min-height: 400px; padding: 20px; }
-			.fc { font-family: inherit; }
-		`;
-		document.head.appendChild(fallbackStyle);
-		return;
+// Load FullCalendar CSS from CDN (silently fails if unavailable, fallback CSS is already loaded)
+(function() {
+	const cssCDNs = [
+		'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/main.min.css',
+		'https://unpkg.com/fullcalendar@6.1.10/main.min.css',
+		'https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/6.1.10/main.min.css'
+	];
+	
+	let cssCdnIndex = 0;
+	
+	function tryLoadCSS() {
+		if (cssCdnIndex >= cssCDNs.length) {
+			// All CDNs failed, but fallback CSS is already loaded, so calendar will still work
+			return;
+		}
+		
+		const link = document.createElement('link');
+		link.rel = 'stylesheet';
+		link.href = cssCDNs[cssCdnIndex];
+		link.id = 'fullcalendar-css-cdn';
+		
+		// Use a timeout to detect if CSS loaded (check after 2 seconds)
+		const timeout = setTimeout(() => {
+			// If we reach here, CSS likely didn't load, try next CDN
+			if (link.parentNode) {
+				link.parentNode.removeChild(link);
+			}
+			cssCdnIndex++;
+			tryLoadCSS();
+		}, 2000);
+		
+		// If CSS loads successfully, clear the timeout
+		link.onload = function() {
+			clearTimeout(timeout);
+			console.log('✅ FullCalendar CSS loaded from:', link.href);
+		};
+		
+		// Try to detect load via stylesheet.sheet property
+		document.head.appendChild(link);
+		
+		// Check if stylesheet is accessible (indicates it loaded)
+		setTimeout(() => {
+			try {
+				if (link.sheet && link.sheet.cssRules && link.sheet.cssRules.length > 0) {
+					clearTimeout(timeout);
+					console.log('✅ FullCalendar CSS loaded from:', link.href);
+				}
+			} catch (e) {
+				// Cross-origin stylesheet, can't check directly
+				// Let timeout handle it
+			}
+		}, 500);
 	}
 	
-	const link = document.createElement('link');
-	link.rel = 'stylesheet';
-	link.href = cssCDNs[cssCdnIndex];
-	cssCdnIndex++;
-	
-	link.onload = function() {
-		console.log('FullCalendar CSS loaded from:', link.href);
-	};
-	
-	link.onerror = function() {
-		console.warn('Failed to load CSS from:', link.href, 'Trying next CDN...');
-		setTimeout(loadFullCalendarCSS, 500);
-	};
-	
-	document.head.appendChild(link);
-}
-
-// Load CSS immediately
-if (document.readyState === 'loading') {
-	document.addEventListener('DOMContentLoaded', loadFullCalendarCSS);
-} else {
-	loadFullCalendarCSS();
-}
+	// Start loading CSS
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', tryLoadCSS);
+	} else {
+		tryLoadCSS();
+	}
+})();
 </script>
 
 <script>
@@ -842,6 +956,317 @@ function handleEventClick(info) {
 	document.getElementById('eventModal').classList.remove('hidden');
 }
 
+// Handle day click
+function handleDayClick(info) {
+	const clickedDate = info.dateStr;
+	loadDayDetails(clickedDate);
+}
+
+// Close day modal
+function closeDayModal() {
+	document.getElementById('dayModal').classList.add('hidden');
+}
+
+// Load and display day details
+function loadDayDetails(date) {
+	// Show modal and set loading state
+	document.getElementById('dayModal').classList.remove('hidden');
+	document.getElementById('dayModalTitle').textContent = 'Loading...';
+	document.getElementById('dayModalContent').innerHTML = `
+		<div class="flex items-center justify-center py-12">
+			<svg class="animate-spin h-8 w-8 text-maroon-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+				<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+				<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+			</svg>
+			<span class="ml-3 text-maroon-700 font-semibold">Loading day details...</span>
+		</div>
+	`;
+	
+	fetch(`<?php echo base_url('api/day_reservations.php'); ?>?date=${date}`)
+		.then(response => response.json())
+		.then(data => {
+			displayDayDetails(data);
+		})
+		.catch(error => {
+			console.error('Error loading day details:', error);
+			document.getElementById('dayModalContent').innerHTML = `
+				<div class="text-center py-12">
+					<svg class="w-16 h-16 mx-auto text-red-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+					</svg>
+					<p class="text-red-600 font-semibold text-lg">Error loading day details</p>
+					<p class="text-neutral-600 mt-2">Please try again later.</p>
+				</div>
+			`;
+		});
+}
+
+// Display day details in modal
+function displayDayDetails(data) {
+	const dateFormatted = data.date_formatted || new Date(data.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+	document.getElementById('dayModalTitle').textContent = dateFormatted;
+	
+	let html = '';
+	
+	// Statistics Summary
+	html += `
+		<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+			<div class="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl p-4 border-2 border-yellow-200 shadow-md">
+				<div class="text-xs font-semibold text-yellow-700 uppercase mb-1">Pending</div>
+				<div class="text-3xl font-bold text-yellow-900">${data.statistics.total_pending}</div>
+			</div>
+			<div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border-2 border-blue-200 shadow-md">
+				<div class="text-xs font-semibold text-blue-700 uppercase mb-1">Confirmed/Paid</div>
+				<div class="text-3xl font-bold text-blue-900">${data.statistics.total_confirmed}</div>
+			</div>
+			<div class="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border-2 border-green-200 shadow-md">
+				<div class="text-xs font-semibold text-green-700 uppercase mb-1">Completed</div>
+				<div class="text-3xl font-bold text-green-900">${data.statistics.total_completed}</div>
+			</div>
+			<div class="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border-2 border-purple-200 shadow-md">
+				<div class="text-xs font-semibold text-purple-700 uppercase mb-1">Total</div>
+				<div class="text-3xl font-bold text-purple-900">${data.statistics.total_reservations}</div>
+			</div>
+		</div>
+	`;
+	
+	// Pending Reservations Section
+	if (data.pending_reservations && data.pending_reservations.length > 0) {
+		html += `
+			<div class="mb-6">
+				<div class="flex items-center gap-3 mb-4">
+					<div class="w-10 h-10 rounded-lg bg-yellow-100 flex items-center justify-center">
+						<svg class="w-6 h-6 text-yellow-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+						</svg>
+					</div>
+					<h3 class="text-xl font-bold text-yellow-900">Pending Reservations (${data.pending_reservations.length})</h3>
+				</div>
+				<div class="space-y-3">
+		`;
+		
+		data.pending_reservations.forEach(res => {
+			const isMine = res.is_mine;
+			html += `
+				<div class="bg-gradient-to-r from-yellow-50 to-amber-50 rounded-xl p-4 border-2 border-yellow-200 shadow-md">
+					<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+						<div class="flex-1">
+							<div class="flex items-center gap-2 mb-2">
+								<span class="status-badge ${isMine ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-neutral-100 text-neutral-800 border-neutral-200'}">
+									${isMine ? '👤 My Reservation' : '👥 ' + (res.user_name || 'Another User')}
+								</span>
+								<span class="status-badge bg-yellow-100 text-yellow-800 border-yellow-200">Pending</span>
+							</div>
+							<div class="font-bold text-lg text-yellow-900 mb-1">${res.facility_name}</div>
+							${res.category_name ? `<div class="text-sm text-yellow-700 mb-2">${res.category_name}</div>` : ''}
+							<div class="flex flex-wrap gap-4 text-sm">
+								<div>
+									<span class="text-yellow-700 font-semibold">Time:</span>
+									<span class="text-yellow-900 font-bold ml-1">${res.start_time_formatted} - ${res.end_time_formatted}</span>
+								</div>
+								<div>
+									<span class="text-yellow-700 font-semibold">Duration:</span>
+									<span class="text-yellow-900 font-bold ml-1">${res.booking_duration_hours.toFixed(1)} hours</span>
+								</div>
+							</div>
+							${res.purpose ? `<div class="text-sm text-yellow-800 mt-2"><span class="font-semibold">Purpose:</span> ${res.purpose}</div>` : ''}
+						</div>
+						<div class="mt-3">
+							<a href="<?php echo base_url('facility.php'); ?>?id=${res.facility_id}&date=${data.date}" class="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-yellow-600 to-amber-600 text-white hover:from-yellow-700 hover:to-amber-700 transition-all font-semibold shadow-md hover:shadow-lg text-sm">
+								<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+								</svg>
+								Book This Facility
+							</a>
+						</div>
+					</div>
+				</div>
+			`;
+		});
+		
+		html += `
+				</div>
+			</div>
+		`;
+	}
+	
+	// Confirmed/Paid Reservations Section
+	if (data.confirmed_reservations && data.confirmed_reservations.length > 0) {
+		html += `
+			<div class="mb-6">
+				<div class="flex items-center gap-3 mb-4">
+					<div class="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+						<svg class="w-6 h-6 text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+						</svg>
+					</div>
+					<h3 class="text-xl font-bold text-blue-900">Confirmed/Paid Reservations (${data.confirmed_reservations.length})</h3>
+				</div>
+				<div class="space-y-3">
+		`;
+		
+		data.confirmed_reservations.forEach(res => {
+			const isMine = res.is_mine;
+			const now = new Date();
+			const startTime = new Date(res.start_time);
+			const endTime = new Date(res.end_time);
+			const isOngoing = startTime <= now && endTime >= now;
+			
+			html += `
+				<div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border-2 ${isOngoing ? 'border-purple-300' : 'border-blue-200'} shadow-md ${isOngoing ? 'ring-2 ring-purple-400' : ''}">
+					<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+						<div class="flex-1">
+							<div class="flex items-center gap-2 mb-2">
+								<span class="status-badge ${isMine ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-neutral-100 text-neutral-800 border-neutral-200'}">
+									${isMine ? '👤 My Reservation' : '👥 ' + (res.user_name || 'Another User')}
+								</span>
+								<span class="status-badge bg-blue-100 text-blue-800 border-blue-200">Confirmed</span>
+								${res.payment_status === 'paid' ? '<span class="status-badge bg-green-100 text-green-800 border-green-200">Paid</span>' : ''}
+								${isOngoing ? '<span class="status-badge bg-purple-100 text-purple-800 border-purple-200 ongoing-pulse">🟢 Ongoing</span>' : ''}
+							</div>
+							<div class="font-bold text-lg text-blue-900 mb-1">${res.facility_name}</div>
+							${res.category_name ? `<div class="text-sm text-blue-700 mb-2">${res.category_name}</div>` : ''}
+							<div class="flex flex-wrap gap-4 text-sm">
+								<div>
+									<span class="text-blue-700 font-semibold">Time:</span>
+									<span class="text-blue-900 font-bold ml-1">${res.start_time_formatted} - ${res.end_time_formatted}</span>
+								</div>
+								<div>
+									<span class="text-blue-700 font-semibold">Duration:</span>
+									<span class="text-blue-900 font-bold ml-1">${res.booking_duration_hours.toFixed(1)} hours</span>
+								</div>
+								${res.total_amount > 0 ? `<div>
+									<span class="text-blue-700 font-semibold">Amount:</span>
+									<span class="text-blue-900 font-bold ml-1">₱${res.total_amount.toFixed(2)}</span>
+								</div>` : ''}
+							</div>
+							${res.purpose ? `<div class="text-sm text-blue-800 mt-2"><span class="font-semibold">Purpose:</span> ${res.purpose}</div>` : ''}
+							${res.or_number ? `<div class="text-xs text-blue-600 mt-1"><span class="font-semibold">OR #:</span> ${res.or_number}</div>` : ''}
+						</div>
+						<div class="mt-3">
+							<a href="<?php echo base_url('facility.php'); ?>?id=${res.facility_id}&date=${data.date}" class="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 transition-all font-semibold shadow-md hover:shadow-lg text-sm">
+								<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+								</svg>
+								Book This Facility
+							</a>
+						</div>
+					</div>
+				</div>
+			`;
+		});
+		
+		html += `
+				</div>
+			</div>
+		`;
+	}
+	
+	// Facility Availability Section
+	if (data.facility_availability && data.facility_availability.length > 0) {
+		html += `
+			<div class="mb-6">
+				<div class="flex items-center gap-3 mb-4">
+					<div class="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+						<svg class="w-6 h-6 text-green-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+						</svg>
+					</div>
+					<h3 class="text-xl font-bold text-green-900">Available Time by Facility</h3>
+				</div>
+				<div class="space-y-4">
+		`;
+		
+		data.facility_availability.forEach(facility => {
+			const percentage = facility.total_available_hours > 0 
+				? (facility.available_hours_left / facility.total_available_hours) * 100 
+				: 0;
+			
+			html += `
+				<div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-5 border-2 border-green-200 shadow-md">
+					<div class="flex items-center justify-between mb-3">
+						<div>
+							<div class="font-bold text-lg text-green-900">${facility.facility_name}</div>
+							<div class="text-sm text-green-700">Operating Hours: ${String(facility.booking_start_hour).padStart(2, '0')}:00 - ${String(facility.booking_end_hour).padStart(2, '0')}:00</div>
+						</div>
+						<div class="text-right">
+							<div class="text-2xl font-bold text-green-900">${facility.available_hours_left.toFixed(1)}h</div>
+							<div class="text-xs text-green-700">available left</div>
+						</div>
+					</div>
+					<div class="mb-2">
+						<div class="flex justify-between text-sm mb-1">
+							<span class="text-green-700 font-semibold">Availability</span>
+							<span class="text-green-900 font-bold">${percentage.toFixed(0)}%</span>
+						</div>
+						<div class="w-full bg-green-200 rounded-full h-3">
+							<div class="bg-gradient-to-r from-green-500 to-emerald-500 h-3 rounded-full transition-all" style="width: ${percentage}%"></div>
+						</div>
+					</div>
+					<div class="grid grid-cols-3 gap-3 text-sm mt-3">
+						<div class="bg-white/70 rounded-lg p-2 border border-green-200">
+							<div class="text-xs font-semibold text-green-700 uppercase mb-1">Total Hours</div>
+							<div class="font-bold text-green-900">${facility.total_available_hours}h</div>
+						</div>
+						<div class="bg-white/70 rounded-lg p-2 border border-green-200">
+							<div class="text-xs font-semibold text-green-700 uppercase mb-1">Booked</div>
+							<div class="font-bold text-green-900">${facility.total_booked_hours}h</div>
+						</div>
+						<div class="bg-white/70 rounded-lg p-2 border border-green-200">
+							<div class="text-xs font-semibold text-green-700 uppercase mb-1">Available</div>
+							<div class="font-bold text-green-900">${facility.available_hours_left.toFixed(1)}h</div>
+						</div>
+					</div>
+					<div class="mt-4 pt-4 border-t border-green-200">
+						<a href="<?php echo base_url('facility.php'); ?>?id=${facility.facility_id}&date=${data.date}" class="inline-flex items-center justify-center w-full px-6 py-3 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700 transition-all font-semibold shadow-lg hover:shadow-xl">
+							<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+							</svg>
+							Book This Facility
+						</a>
+					</div>
+					${facility.reservations && facility.reservations.length > 0 ? `
+						<div class="mt-4 pt-4 border-t border-green-200">
+							<div class="text-xs font-bold text-green-800 uppercase mb-2">Reservations on this facility:</div>
+							<div class="space-y-2">
+								${facility.reservations.map(res => `
+									<div class="flex items-center justify-between bg-white/70 rounded-lg p-2 border border-green-200 text-sm">
+										<div>
+											<span class="font-semibold text-green-900">${res.is_mine ? '👤 You' : '👥 ' + (res.user_name || 'User')}</span>
+											<span class="text-green-700 ml-2">${res.start_time_formatted} - ${res.end_time_formatted}</span>
+										</div>
+										<span class="status-badge ${getStatusColor(res.status)} text-xs">${res.status}</span>
+									</div>
+								`).join('')}
+							</div>
+						</div>
+					` : '<div class="mt-3 text-sm text-green-700 font-semibold">✓ No reservations - Fully available</div>'}
+				</div>
+			`;
+		});
+		
+		html += `
+				</div>
+			</div>
+		`;
+	}
+	
+	// If no data
+	if (!data.pending_reservations?.length && !data.confirmed_reservations?.length && !data.facility_availability?.length) {
+		html = `
+			<div class="text-center py-12">
+				<svg class="w-16 h-16 mx-auto text-neutral-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+				</svg>
+				<p class="text-neutral-600 font-semibold text-lg">No reservations for this day</p>
+				<p class="text-neutral-500 mt-2">All facilities are available.</p>
+			</div>
+		`;
+	}
+	
+	document.getElementById('dayModalContent').innerHTML = html;
+}
+
 // Load availability statistics
 function loadAvailabilityStats(date) {
 	if (!date) date = new Date().toISOString().split('T')[0];
@@ -919,6 +1344,8 @@ function initCalendar() {
 			droppable: false,
 			selectable: false,
 			eventClick: handleEventClick,
+			dayClick: handleDayClick,
+			dateClick: handleDayClick,
 			events: function(fetchInfo, successCallback, failureCallback) {
 				// Build filter parameters
 				const params = new URLSearchParams();
