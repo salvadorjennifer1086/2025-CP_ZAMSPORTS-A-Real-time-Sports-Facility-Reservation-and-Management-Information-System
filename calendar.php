@@ -1046,6 +1046,28 @@ document.getElementById('statusFilter')?.addEventListener('change', function() {
 	applyFilters();
 });
 
+// ==================== DEBUG SECTION ====================
+console.log('🔍 DEBUG: Calendar initialization check');
+console.log('🔍 DEBUG: Calendar object:', calendar);
+console.log('🔍 DEBUG: Current filters:', {
+	search: currentSearchQuery,
+	facility: currentFacilityFilter,
+	status: currentStatusFilter
+});
+
+// Sample error for debugging
+try {
+	console.log('🔍 DEBUG: Attempting to access undefined property...');
+	const testObj = null;
+	const errorValue = testObj.someProperty.nestedProperty; // This will cause an error
+	console.log('🔍 DEBUG: Error value:', errorValue);
+} catch (error) {
+	console.error('❌ ERROR CAUGHT:', error.message);
+	console.error('❌ Stack trace:', error.stack);
+	console.log('🔍 DEBUG: Error type:', error.name);
+}
+// ==================== END DEBUG SECTION ====================
+
 </script>
 
 <?php require_once __DIR__ . '/partials/footer.php'; ?>
