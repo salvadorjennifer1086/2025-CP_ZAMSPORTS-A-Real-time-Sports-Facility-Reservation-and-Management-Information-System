@@ -750,6 +750,95 @@ if (isset($_SESSION['booking_error'])) {
 }
 </style>
 
+<!-- Ratings and Reviews Section -->
+<div class="mt-12 mb-8">
+	<div class="bg-white rounded-xl shadow-lg border-2 border-neutral-200 p-6">
+		<div class="flex items-center justify-between mb-6">
+			<div class="flex items-center gap-3">
+				<svg class="w-8 h-8 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+					<path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path>
+				</svg>
+				<h2 class="text-2xl font-bold text-neutral-900">Ratings & Reviews</h2>
+			</div>
+		</div>
+		
+		<!-- Rating Statistics -->
+		<div id="ratingStats" class="mb-6 p-4 bg-gradient-to-r from-yellow-50 to-amber-50 rounded-xl border border-yellow-200">
+			<div class="flex items-center justify-between mb-4">
+				<div>
+					<div class="text-4xl font-bold text-yellow-900" id="averageRating">-</div>
+					<div class="text-sm text-yellow-700" id="totalRatings">Loading...</div>
+				</div>
+				<div class="flex-1 ml-6">
+					<div id="ratingDistribution" class="space-y-2"></div>
+				</div>
+			</div>
+		</div>
+		
+		<!-- Add Rating Form (for logged-in users) -->
+		<?php if ($u && $u['role'] === 'user'): ?>
+		<div id="addRatingSection" class="mb-6 p-5 bg-gradient-to-r from-maroon-50 to-red-50 rounded-xl border-2 border-maroon-200">
+			<h3 class="text-lg font-bold text-maroon-900 mb-4">Write a Review</h3>
+			<form id="ratingForm" class="space-y-4">
+				<input type="hidden" id="ratingFacilityId" value="<?php echo $id; ?>">
+				
+				<!-- Rating Stars -->
+				<div>
+					<label class="block text-sm font-semibold text-neutral-900 mb-2">Your Rating</label>
+					<div class="flex items-center gap-2" id="starRating">
+						<?php for ($i = 1; $i <= 5; $i++): ?>
+						<button type="button" class="star-btn text-3xl text-neutral-300 hover:text-yellow-400 transition-colors" data-rating="<?php echo $i; ?>">
+							★
+						</button>
+						<?php endfor; ?>
+					</div>
+					<input type="hidden" id="ratingValue" name="rating" required>
+				</div>
+				
+				<!-- Review Title -->
+				<div>
+					<label class="block text-sm font-semibold text-neutral-900 mb-2">Review Title (Optional)</label>
+					<input type="text" id="reviewTitle" class="w-full border-2 border-neutral-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500" placeholder="Give your review a title">
+				</div>
+				
+				<!-- Review Text -->
+				<div>
+					<label class="block text-sm font-semibold text-neutral-900 mb-2">Your Review</label>
+					<textarea id="reviewText" rows="4" class="w-full border-2 border-neutral-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500" placeholder="Share your experience with this facility..."></textarea>
+				</div>
+				
+				<!-- Anonymous Option -->
+				<div class="flex items-center gap-2">
+					<input type="checkbox" id="isAnonymous" class="w-4 h-4 text-maroon-600 border-neutral-300 rounded focus:ring-maroon-500">
+					<label for="isAnonymous" class="text-sm text-neutral-700">Post as anonymous</label>
+				</div>
+				
+				<!-- Submit Button -->
+				<div class="flex gap-3">
+					<button type="submit" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-maroon-600 to-maroon-700 text-white hover:from-maroon-700 hover:to-maroon-800 transition-all font-semibold shadow-lg">
+						Submit Review
+					</button>
+					<button type="button" id="cancelRatingBtn" class="px-6 py-2.5 rounded-xl border-2 border-neutral-300 text-neutral-700 hover:bg-neutral-50 transition-all font-semibold hidden">
+						Cancel
+					</button>
+				</div>
+			</form>
+		</div>
+		<?php endif; ?>
+		
+		<!-- Ratings List -->
+		<div id="ratingsList" class="space-y-4">
+			<div class="text-center py-8 text-neutral-500">
+				<svg class="w-12 h-12 mx-auto mb-3 animate-spin text-maroon-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+				</svg>
+				<p>Loading ratings...</p>
+			</div>
+		</div>
+	</div>
+</div>
+
 <script>
 let currentImage = 0;
 const totalImages = <?php echo count($facilityImages); ?>;
@@ -1667,6 +1756,416 @@ async function loadMonthReservations() {
 renderCalendar();
 loadMonthReservations();
 <?php endif; ?>
+
+// ==================== RATINGS & REVIEWS FUNCTIONALITY ====================
+// Use existing facilityId from booking section (line 1232)
+let currentUserRating = null;
+let selectedRating = 0;
+
+// Load ratings on page load
+document.addEventListener('DOMContentLoaded', function() {
+	loadRatings();
+	
+	// Rating form submission
+	const ratingForm = document.getElementById('ratingForm');
+	if (ratingForm) {
+		ratingForm.addEventListener('submit', handleRatingSubmit);
+	}
+	
+	// Cancel rating button
+	const cancelBtn = document.getElementById('cancelRatingBtn');
+	if (cancelBtn) {
+		cancelBtn.addEventListener('click', resetRatingForm);
+	}
+	
+	// Star rating buttons
+	const starButtons = document.querySelectorAll('.star-btn');
+	starButtons.forEach((star, index) => {
+		star.addEventListener('click', function() {
+			setRating(index + 1);
+		});
+	});
+});
+
+// Load ratings from API
+async function loadRatings() {
+	try {
+		const response = await fetch(`<?php echo base_url('api/facility_ratings.php'); ?>?facility_id=${facilityId}`);
+		const data = await response.json();
+		
+		if (data.success) {
+			displayRatingStats(data.statistics);
+			displayRatings(data.ratings);
+			if (data.user_rating) {
+				currentUserRating = data.user_rating;
+				populateRatingForm(data.user_rating);
+			}
+		}
+	} catch (error) {
+		console.error('Error loading ratings:', error);
+		document.getElementById('ratingsList').innerHTML = '<div class="text-center py-8 text-red-600">Error loading ratings. Please refresh the page.</div>';
+	}
+}
+
+// Display rating statistics
+function displayRatingStats(stats) {
+	const avgRating = stats.average_rating || 0;
+	const totalRatings = stats.total_ratings || 0;
+	
+	document.getElementById('averageRating').textContent = avgRating.toFixed(1);
+	document.getElementById('totalRatings').textContent = `${totalRatings} ${totalRatings === 1 ? 'review' : 'reviews'}`;
+	
+	// Display rating distribution
+	const distribution = document.getElementById('ratingDistribution');
+	let html = '';
+	for (let i = 5; i >= 1; i--) {
+		const count = stats[`rating_${i}`] || 0;
+		const percentage = totalRatings > 0 ? (count / totalRatings) * 100 : 0;
+		html += `
+			<div class="flex items-center gap-2">
+				<span class="text-sm font-medium text-yellow-800 w-8">${i}★</span>
+				<div class="flex-1 bg-yellow-200 rounded-full h-2">
+					<div class="bg-yellow-600 h-2 rounded-full" style="width: ${percentage}%"></div>
+				</div>
+				<span class="text-xs text-yellow-700 w-8">${count}</span>
+			</div>
+		`;
+	}
+	distribution.innerHTML = html;
+}
+
+// Display ratings list
+function displayRatings(ratings) {
+	const container = document.getElementById('ratingsList');
+	
+	if (!ratings || ratings.length === 0) {
+		container.innerHTML = '<div class="text-center py-8 text-neutral-500">No reviews yet. Be the first to review this facility!</div>';
+		return;
+	}
+	
+	let html = '';
+	ratings.forEach(rating => {
+		const userName = rating.is_anonymous ? 'Anonymous User' : (rating.user_name || 'User');
+		const stars = '★'.repeat(rating.rating) + '☆'.repeat(5 - rating.rating);
+		const date = new Date(rating.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+		const isMine = rating.user_id === <?php echo $u ? (int)$u['id'] : 0; ?>;
+		const isAdminStaff = <?php echo $isAdminStaff ? 'true' : 'false'; ?>;
+		
+		html += `
+			<div class="bg-white rounded-xl border-2 border-neutral-200 p-5 shadow-md" data-rating-id="${rating.id}">
+				<div class="flex items-start justify-between mb-3">
+					<div class="flex-1">
+						<div class="flex items-center gap-3 mb-2">
+							<div class="w-10 h-10 rounded-full bg-maroon-100 flex items-center justify-center">
+								<span class="text-maroon-700 font-bold">${userName.charAt(0).toUpperCase()}</span>
+							</div>
+							<div>
+								<div class="font-semibold text-neutral-900">${userName}</div>
+								<div class="text-xs text-neutral-500">${date}</div>
+							</div>
+							${rating.is_verified ? '<span class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full font-semibold">✓ Verified</span>' : ''}
+						</div>
+						<div class="text-yellow-500 text-xl mb-2">${stars}</div>
+						${rating.review_title ? `<div class="font-bold text-lg text-neutral-900 mb-2">${escapeHtml(rating.review_title)}</div>` : ''}
+						${rating.review_text ? `<div class="text-neutral-700 mb-3">${escapeHtml(rating.review_text)}</div>` : ''}
+					</div>
+					${(isMine || isAdminStaff) ? `
+						<div class="flex gap-2">
+							<button onclick="deleteRating(${rating.id})" class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+								<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+								</svg>
+							</button>
+						</div>
+					` : ''}
+				</div>
+				
+				<!-- Vote Buttons -->
+				<div class="flex items-center gap-4 mb-3">
+					<button onclick="voteRating(${rating.id}, 'upvote')" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 transition-colors ${rating.user_vote === 'upvote' ? 'bg-green-100 border-green-500 text-green-700' : 'bg-neutral-50 border-neutral-300 text-neutral-700 hover:bg-green-50'}">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"></path>
+						</svg>
+						<span class="font-semibold" id="upvotes-${rating.id}">${rating.upvotes || 0}</span>
+					</button>
+					<button onclick="voteRating(${rating.id}, 'downvote')" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 transition-colors ${rating.user_vote === 'downvote' ? 'bg-red-100 border-red-500 text-red-700' : 'bg-neutral-50 border-neutral-300 text-neutral-700 hover:bg-red-50'}">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5"></path>
+						</svg>
+						<span class="font-semibold" id="downvotes-${rating.id}">${rating.downvotes || 0}</span>
+					</button>
+				</div>
+				
+				<!-- Replies Section -->
+				<div class="mt-4 pt-4 border-t border-neutral-200">
+					<div id="replies-${rating.id}" class="space-y-3 mb-3">
+						${rating.replies ? rating.replies.map(reply => `
+							<div class="bg-neutral-50 rounded-lg p-3 ml-4" data-reply-id="${reply.id}">
+								<div class="flex items-start justify-between mb-2">
+									<div class="flex items-center gap-2">
+										<span class="font-semibold text-sm text-neutral-900">${reply.is_facility_reply ? '🏢 ' : ''}${reply.user_name || 'User'}</span>
+										${reply.user_role === 'admin' || reply.user_role === 'staff' ? '<span class="px-2 py-0.5 bg-blue-100 text-blue-800 text-xs rounded-full">Staff</span>' : ''}
+										<span class="text-xs text-neutral-500">${new Date(reply.created_at).toLocaleDateString()}</span>
+									</div>
+									${(reply.user_id === <?php echo $u ? (int)$u['id'] : 0; ?> || <?php echo $isAdminStaff ? 'true' : 'false'; ?>) ? `
+										<button onclick="deleteReply(${reply.id}, ${rating.id})" class="p-1 text-red-600 hover:bg-red-50 rounded transition-colors">
+											<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+											</svg>
+										</button>
+									` : ''}
+								</div>
+								<div class="text-sm text-neutral-700 mb-2">${escapeHtml(reply.reply_text)}</div>
+								<div class="flex items-center gap-4">
+									<button onclick="voteReply(${reply.id}, ${rating.id}, 'upvote')" class="flex items-center gap-1 px-2 py-1 rounded border transition-colors ${reply.user_vote === 'upvote' ? 'bg-green-100 border-green-500 text-green-700' : 'bg-white border-neutral-300 text-neutral-700 hover:bg-green-50'}">
+										<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"></path>
+										</svg>
+										<span class="text-xs font-semibold" id="reply-upvotes-${reply.id}">${reply.upvotes || 0}</span>
+									</button>
+									<button onclick="voteReply(${reply.id}, ${rating.id}, 'downvote')" class="flex items-center gap-1 px-2 py-1 rounded border transition-colors ${reply.user_vote === 'downvote' ? 'bg-red-100 border-red-500 text-red-700' : 'bg-white border-neutral-300 text-neutral-700 hover:bg-red-50'}">
+										<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5"></path>
+										</svg>
+										<span class="text-xs font-semibold" id="reply-downvotes-${reply.id}">${reply.downvotes || 0}</span>
+									</button>
+								</div>
+							</div>
+						`).join('') : ''}
+					</div>
+					
+					<!-- Reply Form -->
+					<?php if ($u): ?>
+					<div class="mt-3">
+						<form onsubmit="submitReply(event, ${rating.id})" class="flex gap-2">
+							<input type="text" id="reply-text-${rating.id}" placeholder="Write a reply..." class="flex-1 border-2 border-neutral-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500" required>
+							<button type="submit" class="px-4 py-2 bg-maroon-600 text-white rounded-lg hover:bg-maroon-700 transition-colors font-semibold">
+								Reply
+							</button>
+						</form>
+					</div>
+					<?php endif; ?>
+				</div>
+			</div>
+		`;
+	});
+	
+	container.innerHTML = html;
+}
+
+// Set rating stars
+function setRating(rating) {
+	selectedRating = rating;
+	document.getElementById('ratingValue').value = rating;
+	
+	const stars = document.querySelectorAll('.star-btn');
+	stars.forEach((star, index) => {
+		if (index < rating) {
+			star.classList.remove('text-neutral-300');
+			star.classList.add('text-yellow-400');
+		} else {
+			star.classList.remove('text-yellow-400');
+			star.classList.add('text-neutral-300');
+		}
+	});
+}
+
+// Handle rating form submission
+async function handleRatingSubmit(e) {
+	e.preventDefault();
+	
+	const rating = parseInt(document.getElementById('ratingValue').value);
+	const reviewTitle = document.getElementById('reviewTitle').value.trim();
+	const reviewText = document.getElementById('reviewText').value.trim();
+	const isAnonymous = document.getElementById('isAnonymous').checked ? 1 : 0;
+	
+	if (!rating || rating < 1 || rating > 5) {
+		alert('Please select a rating');
+		return;
+	}
+	
+	try {
+		const response = await fetch('<?php echo base_url('api/facility_ratings.php'); ?>', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				facility_id: facilityId,
+				rating: rating,
+				review_title: reviewTitle,
+				review_text: reviewText,
+				is_anonymous: isAnonymous
+			})
+		});
+		
+		const data = await response.json();
+		
+		if (data.success) {
+			alert(data.message);
+			resetRatingForm();
+			loadRatings();
+		} else {
+			alert('Error: ' + (data.error || 'Failed to submit rating'));
+		}
+	} catch (error) {
+		console.error('Error submitting rating:', error);
+		alert('Error submitting rating. Please try again.');
+	}
+}
+
+// Reset rating form
+function resetRatingForm() {
+	selectedRating = 0;
+	document.getElementById('ratingForm').reset();
+	document.getElementById('ratingValue').value = '';
+	document.querySelectorAll('.star-btn').forEach(star => {
+		star.classList.remove('text-yellow-400');
+		star.classList.add('text-neutral-300');
+	});
+	document.getElementById('cancelRatingBtn').classList.add('hidden');
+}
+
+// Populate rating form (for editing)
+function populateRatingForm(rating) {
+	setRating(rating.rating);
+	document.getElementById('reviewTitle').value = rating.review_title || '';
+	document.getElementById('reviewText').value = rating.review_text || '';
+	document.getElementById('cancelRatingBtn').classList.remove('hidden');
+}
+
+// Submit reply
+async function submitReply(e, ratingId) {
+	e.preventDefault();
+	const replyText = document.getElementById(`reply-text-${ratingId}`).value.trim();
+	
+	if (!replyText) return;
+	
+	try {
+		const response = await fetch('<?php echo base_url('api/facility_replies.php'); ?>', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				rating_id: ratingId,
+				reply_text: replyText
+			})
+		});
+		
+		const data = await response.json();
+		
+		if (data.success) {
+			document.getElementById(`reply-text-${ratingId}`).value = '';
+			loadRatings();
+		} else {
+			alert('Error: ' + (data.error || 'Failed to submit reply'));
+		}
+	} catch (error) {
+		console.error('Error submitting reply:', error);
+		alert('Error submitting reply. Please try again.');
+	}
+}
+
+// Vote on rating
+async function voteRating(ratingId, voteType) {
+	try {
+		const response = await fetch('<?php echo base_url('api/facility_votes.php'); ?>', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				rating_id: ratingId,
+				vote_type: voteType
+			})
+		});
+		
+		const data = await response.json();
+		
+		if (data.success) {
+			document.getElementById(`upvotes-${ratingId}`).textContent = data.upvotes;
+			document.getElementById(`downvotes-${ratingId}`).textContent = data.downvotes;
+			
+			// Reload ratings to update button styles
+			loadRatings();
+		}
+	} catch (error) {
+		console.error('Error voting:', error);
+		alert('Error voting. Please try again.');
+	}
+}
+
+// Vote on reply
+async function voteReply(replyId, ratingId, voteType) {
+	try {
+		const response = await fetch('<?php echo base_url('api/facility_votes.php'); ?>', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				reply_id: replyId,
+				vote_type: voteType
+			})
+		});
+		
+		const data = await response.json();
+		
+		if (data.success) {
+			document.getElementById(`reply-upvotes-${replyId}`).textContent = data.upvotes;
+			document.getElementById(`reply-downvotes-${replyId}`).textContent = data.downvotes;
+			loadRatings(); // Reload to update button styles
+		}
+	} catch (error) {
+		console.error('Error voting on reply:', error);
+		alert('Error voting. Please try again.');
+	}
+}
+
+// Delete rating
+async function deleteRating(ratingId) {
+	if (!confirm('Are you sure you want to delete this rating?')) return;
+	
+	try {
+		const response = await fetch(`<?php echo base_url('api/facility_ratings.php'); ?>?rating_id=${ratingId}`, {
+			method: 'DELETE'
+		});
+		
+		const data = await response.json();
+		
+		if (data.success) {
+			loadRatings();
+		} else {
+			alert('Error: ' + (data.error || 'Failed to delete rating'));
+		}
+	} catch (error) {
+		console.error('Error deleting rating:', error);
+		alert('Error deleting rating. Please try again.');
+	}
+}
+
+// Delete reply
+async function deleteReply(replyId, ratingId) {
+	if (!confirm('Are you sure you want to delete this reply?')) return;
+	
+	try {
+		const response = await fetch(`<?php echo base_url('api/facility_replies.php'); ?>?reply_id=${replyId}`, {
+			method: 'DELETE'
+		});
+		
+		const data = await response.json();
+		
+		if (data.success) {
+			loadRatings();
+		} else {
+			alert('Error: ' + (data.error || 'Failed to delete reply'));
+		}
+	} catch (error) {
+		console.error('Error deleting reply:', error);
+		alert('Error deleting reply. Please try again.');
+	}
+}
+
+// Escape HTML
+function escapeHtml(text) {
+	const div = document.createElement('div');
+	div.textContent = text;
+	return div.innerHTML;
+}
+// ==================== END RATINGS & REVIEWS ====================
 </script>
 
 <?php require_once __DIR__ . '/partials/footer.php'; ?>
