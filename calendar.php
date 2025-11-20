@@ -393,8 +393,54 @@ $categories = db()->query('SELECT id, name FROM categories ORDER BY name')->fetc
 	</div>
 </div>
 
-<!-- FullCalendar CSS -->
-<link href='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/main.min.css' rel='stylesheet' />
+<!-- FullCalendar CSS - Will be loaded with fallback -->
+<script>
+// Load FullCalendar CSS with fallback CDNs
+const cssCDNs = [
+	'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/main.min.css',
+	'https://unpkg.com/fullcalendar@6.1.10/main.min.css',
+	'https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/6.1.10/main.min.css'
+];
+
+let cssCdnIndex = 0;
+
+function loadFullCalendarCSS() {
+	if (cssCdnIndex >= cssCDNs.length) {
+		console.error('Failed to load FullCalendar CSS from all CDNs');
+		// Add inline fallback styles to prevent layout issues
+		const fallbackStyle = document.createElement('style');
+		fallbackStyle.textContent = `
+			#calendar { min-height: 400px; padding: 20px; }
+			.fc { font-family: inherit; }
+		`;
+		document.head.appendChild(fallbackStyle);
+		return;
+	}
+	
+	const link = document.createElement('link');
+	link.rel = 'stylesheet';
+	link.href = cssCDNs[cssCdnIndex];
+	cssCdnIndex++;
+	
+	link.onload = function() {
+		console.log('FullCalendar CSS loaded from:', link.href);
+	};
+	
+	link.onerror = function() {
+		console.warn('Failed to load CSS from:', link.href, 'Trying next CDN...');
+		setTimeout(loadFullCalendarCSS, 500);
+	};
+	
+	document.head.appendChild(link);
+}
+
+// Load CSS immediately
+if (document.readyState === 'loading') {
+	document.addEventListener('DOMContentLoaded', loadFullCalendarCSS);
+} else {
+	loadFullCalendarCSS();
+}
+</script>
 
 <script>
 /*
