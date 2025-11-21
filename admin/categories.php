@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../partials/header.php';
+require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../lib/db.php';
 require_once __DIR__ . '/../lib/auth.php';
 require_role(['admin','staff']);
@@ -26,6 +26,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 		}
 	}
 }
+
+require_once __DIR__ . '/../partials/header.php';
 
 $rows = db()->query('SELECT * FROM categories ORDER BY created_at DESC')->fetchAll();
 ?>
