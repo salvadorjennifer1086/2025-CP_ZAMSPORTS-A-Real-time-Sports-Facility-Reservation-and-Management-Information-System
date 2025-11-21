@@ -1,5 +1,6 @@
 <?php
-require_once __DIR__ . '/../partials/header.php';
+// Handle POST requests BEFORE including header to prevent "headers already sent" errors
+require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../lib/db.php';
 require_once __DIR__ . '/../lib/auth.php';
 require_role(['admin','staff']);
@@ -127,6 +128,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	}
 }
 
+// Now include header after POST handling is complete
+require_once __DIR__ . '/../partials/header.php';
+
 // Check if holidays table exists, if not show message
 try {
 	$holidays = db()->query('SELECT * FROM holidays ORDER BY date ASC, recurring_month ASC, recurring_day ASC')->fetchAll();
@@ -155,86 +159,117 @@ foreach ($holidays as $holiday) {
 }
 ?>
 
+<!-- Success/Error Messages -->
+<?php if ($success): ?>
 <div class="mb-6">
-	<h1 class="text-3xl font-bold text-maroon-700 mb-2">Holidays Management</h1>
-	<p class="text-neutral-600">Configure holidays and special dates for dynamic pricing</p>
+	<div class="bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 rounded-lg p-4 shadow-sm animate-fade-in">
+		<div class="flex items-center gap-3">
+			<div class="flex-shrink-0">
+				<svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+				</svg>
+			</div>
+			<div class="flex-1">
+				<p class="text-sm font-semibold text-green-800">
+					<?php 
+					switch ($success) {
+						case 'created': echo 'Holiday created successfully!'; break;
+						case 'updated': echo 'Holiday updated successfully!'; break;
+						case 'deleted': echo 'Holiday deleted successfully!'; break;
+						case 'toggled': echo 'Holiday status updated!'; break;
+						default: echo 'Operation completed successfully.';
+					}
+					?>
+				</p>
+			</div>
+		</div>
+	</div>
+</div>
+<?php endif; ?>
+
+<?php if ($error && $error !== 'Holidays table does not exist. Please run the database migration first.'): ?>
+<div class="mb-6">
+	<div class="bg-gradient-to-r from-red-50 to-rose-50 border-l-4 border-red-500 rounded-lg p-4 shadow-sm animate-fade-in">
+		<div class="flex items-center gap-3">
+			<div class="flex-shrink-0">
+				<svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+				</svg>
+			</div>
+			<div class="flex-1">
+				<p class="text-sm font-semibold text-red-800">Error: <?php echo htmlspecialchars($error); ?></p>
+			</div>
+		</div>
+	</div>
+</div>
+<?php endif; ?>
+
+<div class="mb-8">
+	<div class="flex items-center gap-3 mb-2">
+		<div class="p-2 bg-gradient-to-br from-maroon-600 to-maroon-800 rounded-xl shadow-lg">
+			<svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+			</svg>
+		</div>
+		<div>
+			<h1 class="text-3xl font-bold text-maroon-700">Holidays Management</h1>
+			<p class="text-neutral-600 mt-1">Configure holidays and special dates for dynamic pricing</p>
+		</div>
+	</div>
 </div>
 
 <!-- Info Box -->
-<div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg mb-4">
-	<div class="flex items-start">
-		<svg class="w-5 h-5 text-blue-500 mr-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-		</svg>
+<div class="bg-gradient-to-r from-blue-50 via-blue-50 to-indigo-50 border-l-4 border-blue-500 rounded-xl p-5 mb-6 shadow-sm">
+	<div class="flex items-start gap-4">
+		<div class="flex-shrink-0 p-2 bg-blue-100 rounded-lg">
+			<svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+			</svg>
+		</div>
 		<div class="flex-1">
-			<h3 class="text-sm font-semibold text-blue-800 mb-1">How Holidays Affect Pricing</h3>
-			<p class="text-sm text-blue-700 mb-2">When a booking date matches an active holiday, the facility's holiday rate multiplier is applied to the base price.</p>
-			<ul class="text-xs text-blue-600 space-y-1 ml-4 list-disc">
+			<h3 class="text-base font-bold text-blue-900 mb-2">How Holidays Affect Pricing</h3>
+			<p class="text-sm text-blue-800 mb-3 leading-relaxed">When a booking date matches an active holiday, the facility's holiday rate multiplier is applied to the base price.</p>
+			<ul class="text-sm text-blue-700 space-y-2 ml-4 list-disc">
 				<li>Recurring holidays automatically apply every year (e.g., Christmas on December 25)</li>
 				<li>One-time holidays apply only to the specific date</li>
 				<li>Holiday pricing takes precedence over weekend pricing if both apply</li>
-				<li>Configure holiday rate multipliers in <a href="<?php echo base_url('admin/facilities.php'); ?>" class="underline font-medium">Facilities</a> settings</li>
+				<li>Configure holiday rate multipliers in <a href="<?php echo base_url('admin/facilities.php'); ?>" class="underline font-semibold hover:text-blue-900 transition-colors">Facilities</a> settings</li>
 			</ul>
 		</div>
 	</div>
 </div>
 
 <?php if (isset($error) && $error === 'Holidays table does not exist. Please run the database migration first.'): ?>
-<div class="mb-4 bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg">
-	<div class="flex items-start">
-		<svg class="w-5 h-5 text-yellow-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-		</svg>
+<div class="mb-6 bg-gradient-to-r from-yellow-50 to-amber-50 border-l-4 border-yellow-500 rounded-xl p-5 shadow-sm">
+	<div class="flex items-start gap-4">
+		<div class="flex-shrink-0 p-2 bg-yellow-100 rounded-lg">
+			<svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+			</svg>
+		</div>
 		<div>
-			<h3 class="text-sm font-semibold text-yellow-800 mb-1">Database Migration Required</h3>
-			<p class="text-sm text-yellow-700">The holidays table does not exist. Please run the database migration file: <code class="bg-yellow-100 px-1 rounded">database_migrations/dynamic_pricing_and_time_limits.sql</code></p>
+			<h3 class="text-base font-bold text-yellow-900 mb-2">Database Migration Required</h3>
+			<p class="text-sm text-yellow-800">The holidays table does not exist. Please run the database migration file: <code class="bg-yellow-100 px-2 py-1 rounded font-mono text-xs">database_migrations/dynamic_pricing_and_time_limits.sql</code></p>
 		</div>
 	</div>
 </div>
 <?php endif; ?>
 
-<?php if ($success): ?>
-<div class="mb-4 bg-green-50 border-l-4 border-green-500 p-4 rounded-lg">
-	<div class="flex items-start">
-		<svg class="w-5 h-5 text-green-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-		</svg>
-		<div>
-			<p class="text-sm text-green-700">
-				<?php 
-				switch ($success) {
-					case 'created': echo 'Holiday created successfully.'; break;
-					case 'updated': echo 'Holiday updated successfully.'; break;
-					case 'deleted': echo 'Holiday deleted successfully.'; break;
-					case 'toggled': echo 'Holiday status updated.'; break;
-					default: echo 'Operation completed successfully.';
-				}
-				?>
-			</p>
+<div class="bg-white rounded-2xl shadow-lg border border-neutral-200 mb-6 overflow-hidden">
+	<div class="px-6 py-5 border-b bg-gradient-to-r from-maroon-600 to-maroon-700">
+		<div class="flex items-center gap-3">
+			<div class="p-2 bg-white/20 backdrop-blur-sm rounded-lg">
+				<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+				</svg>
+			</div>
+			<div>
+				<h2 class="text-lg font-bold text-white">Add New Holiday</h2>
+				<p class="text-sm text-white/90 mt-0.5">Recurring holidays repeat every year (e.g., Christmas, New Year). One-time holidays are for specific dates only.</p>
+			</div>
 		</div>
 	</div>
-</div>
-<?php endif; ?>
-
-<?php if ($error): ?>
-<div class="mb-4 bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
-	<div class="flex items-start">
-		<svg class="w-5 h-5 text-red-500 mr-3 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-		</svg>
-		<div>
-			<p class="text-sm text-red-700">Error: <?php echo htmlspecialchars($error); ?></p>
-		</div>
-	</div>
-</div>
-<?php endif; ?>
-
-<div class="bg-white rounded shadow mb-4">
-	<div class="p-4 border-b bg-maroon-50">
-		<h2 class="font-semibold text-maroon-700">Add New Holiday</h2>
-		<p class="text-xs text-neutral-600 mt-1">Recurring holidays repeat every year (e.g., Christmas, New Year). One-time holidays are for specific dates only.</p>
-	</div>
-	<div class="p-4">
+	<div class="p-6">
 		<form method="post" class="space-y-4">
 			<input type="hidden" name="action" value="create" />
 			<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -278,51 +313,89 @@ foreach ($holidays as $holiday) {
 				</label>
 			</div>
 			<div>
-				<button class="inline-flex items-center px-4 py-2 rounded bg-maroon-700 text-white hover:bg-maroon-800" type="submit">Add Holiday</button>
+				<button class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-maroon-600 to-maroon-700 text-white hover:from-maroon-700 hover:to-maroon-800 transition-all duration-200 shadow-lg hover:shadow-xl font-semibold transform hover:scale-105" type="submit">
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+					</svg>
+					Add Holiday
+				</button>
 			</div>
 		</form>
 	</div>
 </div>
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 	<!-- Recurring Holidays -->
-	<div class="bg-white rounded shadow">
-		<div class="p-4 border-b bg-maroon-50">
-			<h2 class="font-semibold text-maroon-700">Recurring Holidays</h2>
-			<p class="text-xs text-neutral-600 mt-1">Holidays that repeat every year</p>
+	<div class="bg-white rounded-2xl shadow-lg border border-neutral-200 overflow-hidden">
+		<div class="px-6 py-5 border-b bg-gradient-to-r from-maroon-500 via-maroon-600 to-maroon-700">
+			<div class="flex items-center gap-3">
+				<div class="p-2 bg-white/20 backdrop-blur-sm rounded-lg">
+					<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+					</svg>
+				</div>
+				<div>
+					<h2 class="text-lg font-bold text-white">Recurring Holidays</h2>
+					<p class="text-sm text-white/90 mt-0.5">Holidays that repeat every year</p>
+				</div>
+			</div>
 		</div>
-		<div class="divide-y">
+		<div class="divide-y divide-neutral-200">
 			<?php if (empty($recurring)): ?>
-			<div class="p-4 text-sm text-neutral-500 text-center">No recurring holidays</div>
+			<div class="p-8 text-center">
+				<div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-neutral-100 to-neutral-200 flex items-center justify-center">
+					<svg class="w-8 h-8 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+					</svg>
+				</div>
+				<p class="text-sm font-medium text-neutral-500">No recurring holidays</p>
+			</div>
 			<?php else: ?>
 			<?php foreach ($recurring as $holiday): ?>
-			<div class="p-4 hover:bg-neutral-50">
-				<div class="flex items-start justify-between">
+			<div class="p-5 hover:bg-gradient-to-r hover:from-neutral-50 hover:to-maroon-50 transition-all duration-200 group">
+				<div class="flex items-start justify-between gap-4">
 					<div class="flex-1">
-						<div class="font-medium text-neutral-900"><?php echo htmlspecialchars($holiday['name']); ?></div>
-						<div class="text-sm text-neutral-600 mt-1">
-							<?php 
-							if ($holiday['recurring_month'] && $holiday['recurring_day']) {
-								$month_name = date('F', mktime(0, 0, 0, $holiday['recurring_month'], 1));
-								echo $month_name . ' ' . $holiday['recurring_day'];
-							}
-							?>
-						</div>
-						<div class="flex items-center gap-2 mt-2">
-							<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium <?php echo $holiday['is_active'] ? 'bg-green-100 text-green-800' : 'bg-neutral-100 text-neutral-800'; ?>">
-								<?php echo $holiday['is_active'] ? 'Active' : 'Inactive'; ?>
+						<div class="flex items-center gap-2 mb-2">
+							<h3 class="font-bold text-neutral-900"><?php echo htmlspecialchars($holiday['name']); ?></h3>
+							<?php if ($holiday['is_active']): ?>
+							<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 border border-green-200">
+								<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+									<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+								</svg>
+								Active
 							</span>
-							<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+							<?php else: ?>
+							<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-neutral-200 text-neutral-600 border border-neutral-300">Inactive</span>
+							<?php endif; ?>
+						</div>
+						<div class="flex items-center gap-3 mt-2">
+							<div class="flex items-center gap-2 text-sm text-neutral-600">
+								<svg class="w-4 h-4 text-maroon-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+								</svg>
+								<span class="font-medium">
+									<?php 
+									if ($holiday['recurring_month'] && $holiday['recurring_day']) {
+										$month_name = date('F', mktime(0, 0, 0, $holiday['recurring_month'], 1));
+										echo $month_name . ' ' . $holiday['recurring_day'];
+									}
+									?>
+								</span>
+							</div>
+							<span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200">
+								<svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+								</svg>
 								Recurring
 							</span>
 						</div>
 					</div>
-					<div class="flex items-center gap-2 ml-4">
-						<button class="px-3 py-1.5 rounded border text-xs hover:bg-neutral-50" onclick="openEditModal(<?php echo htmlspecialchars(json_encode($holiday)); ?>)">Edit</button>
+					<div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+						<button class="px-4 py-2 rounded-xl border-2 border-neutral-300 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-400 transition-all duration-200 text-xs font-semibold shadow-sm hover:shadow-md" onclick="openEditModal(<?php echo htmlspecialchars(json_encode($holiday)); ?>)">Edit</button>
 						<form method="post" class="inline" onsubmit="return confirm('Are you sure you want to delete this holiday?')">
 							<input type="hidden" name="action" value="delete" />
 							<input type="hidden" name="id" value="<?php echo (int)$holiday['id']; ?>" />
-							<button class="px-3 py-1.5 rounded border text-xs hover:bg-red-50 hover:text-red-700" type="submit">Delete</button>
+							<button class="px-4 py-2 rounded-xl border-2 border-red-300 text-red-700 hover:bg-red-50 hover:border-red-400 transition-all duration-200 text-xs font-semibold shadow-sm hover:shadow-md" type="submit">Delete</button>
 						</form>
 					</div>
 				</div>
@@ -333,39 +406,70 @@ foreach ($holidays as $holiday) {
 	</div>
 
 	<!-- One-Time Holidays -->
-	<div class="bg-white rounded shadow">
-		<div class="p-4 border-b bg-maroon-50">
-			<h2 class="font-semibold text-maroon-700">One-Time Holidays</h2>
-			<p class="text-xs text-neutral-600 mt-1">Holidays for specific dates</p>
+	<div class="bg-white rounded-2xl shadow-lg border border-neutral-200 overflow-hidden">
+		<div class="px-6 py-5 border-b bg-gradient-to-r from-maroon-500 via-maroon-600 to-maroon-700">
+			<div class="flex items-center gap-3">
+				<div class="p-2 bg-white/20 backdrop-blur-sm rounded-lg">
+					<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+					</svg>
+				</div>
+				<div>
+					<h2 class="text-lg font-bold text-white">One-Time Holidays</h2>
+					<p class="text-sm text-white/90 mt-0.5">Holidays for specific dates</p>
+				</div>
+			</div>
 		</div>
-		<div class="divide-y max-h-96 overflow-y-auto">
+		<div class="divide-y divide-neutral-200 max-h-96 overflow-y-auto">
 			<?php if (empty($upcoming) && empty($past)): ?>
-			<div class="p-4 text-sm text-neutral-500 text-center">No one-time holidays</div>
+			<div class="p-8 text-center">
+				<div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-neutral-100 to-neutral-200 flex items-center justify-center">
+					<svg class="w-8 h-8 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+					</svg>
+				</div>
+				<p class="text-sm font-medium text-neutral-500">No one-time holidays</p>
+			</div>
 			<?php else: ?>
 			<?php if (!empty($upcoming)): ?>
-			<div class="p-2 bg-neutral-50 border-b">
-				<div class="text-xs font-semibold text-neutral-600 uppercase">Upcoming / Current Year</div>
+			<div class="px-5 py-3 bg-gradient-to-r from-green-50 to-emerald-50 border-b border-green-200">
+				<div class="flex items-center gap-2">
+					<svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+					</svg>
+					<div class="text-xs font-bold text-green-800 uppercase tracking-wider">Upcoming / Current Year</div>
+				</div>
 			</div>
 			<?php foreach ($upcoming as $holiday): ?>
-			<div class="p-4 hover:bg-neutral-50">
-				<div class="flex items-start justify-between">
+			<div class="p-5 hover:bg-gradient-to-r hover:from-neutral-50 hover:to-maroon-50 transition-all duration-200 group">
+				<div class="flex items-start justify-between gap-4">
 					<div class="flex-1">
-						<div class="font-medium text-neutral-900"><?php echo htmlspecialchars($holiday['name']); ?></div>
-						<div class="text-sm text-neutral-600 mt-1">
-							<?php echo date('F j, Y', strtotime($holiday['date'])); ?>
-						</div>
-						<div class="flex items-center gap-2 mt-2">
-							<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium <?php echo $holiday['is_active'] ? 'bg-green-100 text-green-800' : 'bg-neutral-100 text-neutral-800'; ?>">
-								<?php echo $holiday['is_active'] ? 'Active' : 'Inactive'; ?>
+						<div class="flex items-center gap-2 mb-2">
+							<h3 class="font-bold text-neutral-900"><?php echo htmlspecialchars($holiday['name']); ?></h3>
+							<?php if ($holiday['is_active']): ?>
+							<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 border border-green-200">
+								<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+									<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+								</svg>
+								Active
 							</span>
+							<?php else: ?>
+							<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-neutral-200 text-neutral-600 border border-neutral-300">Inactive</span>
+							<?php endif; ?>
+						</div>
+						<div class="flex items-center gap-2 text-sm text-neutral-600">
+							<svg class="w-4 h-4 text-maroon-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+							</svg>
+							<span class="font-medium"><?php echo date('F j, Y', strtotime($holiday['date'])); ?></span>
 						</div>
 					</div>
-					<div class="flex items-center gap-2 ml-4">
-						<button class="px-3 py-1.5 rounded border text-xs hover:bg-neutral-50" onclick="openEditModal(<?php echo htmlspecialchars(json_encode($holiday)); ?>)">Edit</button>
+					<div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+						<button class="px-4 py-2 rounded-xl border-2 border-neutral-300 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-400 transition-all duration-200 text-xs font-semibold shadow-sm hover:shadow-md" onclick="openEditModal(<?php echo htmlspecialchars(json_encode($holiday)); ?>)">Edit</button>
 						<form method="post" class="inline" onsubmit="return confirm('Are you sure you want to delete this holiday?')">
 							<input type="hidden" name="action" value="delete" />
 							<input type="hidden" name="id" value="<?php echo (int)$holiday['id']; ?>" />
-							<button class="px-3 py-1.5 rounded border text-xs hover:bg-red-50 hover:text-red-700" type="submit">Delete</button>
+							<button class="px-4 py-2 rounded-xl border-2 border-red-300 text-red-700 hover:bg-red-50 hover:border-red-400 transition-all duration-200 text-xs font-semibold shadow-sm hover:shadow-md" type="submit">Delete</button>
 						</form>
 					</div>
 				</div>
@@ -374,29 +478,44 @@ foreach ($holidays as $holiday) {
 			<?php endif; ?>
 			
 			<?php if (!empty($past)): ?>
-			<div class="p-2 bg-neutral-50 border-b border-t">
-				<div class="text-xs font-semibold text-neutral-600 uppercase">Past Holidays</div>
+			<div class="px-5 py-3 bg-gradient-to-r from-neutral-50 to-neutral-100 border-b border-t border-neutral-200">
+				<div class="flex items-center gap-2">
+					<svg class="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+					<div class="text-xs font-bold text-neutral-600 uppercase tracking-wider">Past Holidays</div>
+				</div>
 			</div>
 			<?php foreach ($past as $holiday): ?>
-			<div class="p-4 hover:bg-neutral-50 opacity-75">
-				<div class="flex items-start justify-between">
+			<div class="p-5 hover:bg-gradient-to-r hover:from-neutral-50 hover:to-maroon-50 transition-all duration-200 group opacity-75">
+				<div class="flex items-start justify-between gap-4">
 					<div class="flex-1">
-						<div class="font-medium text-neutral-900"><?php echo htmlspecialchars($holiday['name']); ?></div>
-						<div class="text-sm text-neutral-600 mt-1">
-							<?php echo date('F j, Y', strtotime($holiday['date'])); ?>
-						</div>
-						<div class="flex items-center gap-2 mt-2">
-							<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium <?php echo $holiday['is_active'] ? 'bg-green-100 text-green-800' : 'bg-neutral-100 text-neutral-800'; ?>">
-								<?php echo $holiday['is_active'] ? 'Active' : 'Inactive'; ?>
+						<div class="flex items-center gap-2 mb-2">
+							<h3 class="font-bold text-neutral-900"><?php echo htmlspecialchars($holiday['name']); ?></h3>
+							<?php if ($holiday['is_active']): ?>
+							<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 border border-green-200">
+								<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+									<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+								</svg>
+								Active
 							</span>
+							<?php else: ?>
+							<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-neutral-200 text-neutral-600 border border-neutral-300">Inactive</span>
+							<?php endif; ?>
+						</div>
+						<div class="flex items-center gap-2 text-sm text-neutral-600">
+							<svg class="w-4 h-4 text-maroon-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+							</svg>
+							<span class="font-medium"><?php echo date('F j, Y', strtotime($holiday['date'])); ?></span>
 						</div>
 					</div>
-					<div class="flex items-center gap-2 ml-4">
-						<button class="px-3 py-1.5 rounded border text-xs hover:bg-neutral-50" onclick="openEditModal(<?php echo htmlspecialchars(json_encode($holiday)); ?>)">Edit</button>
+					<div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+						<button class="px-4 py-2 rounded-xl border-2 border-neutral-300 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-400 transition-all duration-200 text-xs font-semibold shadow-sm hover:shadow-md" onclick="openEditModal(<?php echo htmlspecialchars(json_encode($holiday)); ?>)">Edit</button>
 						<form method="post" class="inline" onsubmit="return confirm('Are you sure you want to delete this holiday?')">
 							<input type="hidden" name="action" value="delete" />
 							<input type="hidden" name="id" value="<?php echo (int)$holiday['id']; ?>" />
-							<button class="px-3 py-1.5 rounded border text-xs hover:bg-red-50 hover:text-red-700" type="submit">Delete</button>
+							<button class="px-4 py-2 rounded-xl border-2 border-red-300 text-red-700 hover:bg-red-50 hover:border-red-400 transition-all duration-200 text-xs font-semibold shadow-sm hover:shadow-md" type="submit">Delete</button>
 						</form>
 					</div>
 				</div>
@@ -410,11 +529,22 @@ foreach ($holidays as $holiday) {
 
 <!-- Edit Modal -->
 <div id="editModal" class="hidden fixed inset-0 z-50">
-	<div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeEditModal()"></div>
-	<div class="relative max-w-2xl mx-auto mt-8 bg-white rounded-xl shadow-xl border border-neutral-200 max-h-[90vh] overflow-hidden flex flex-col">
-		<div class="flex items-center justify-between px-5 py-4 border-b bg-neutral-50">
-			<h3 class="font-semibold text-maroon-700">Edit Holiday</h3>
-			<button class="h-8 w-8 inline-flex items-center justify-center rounded-full hover:bg-neutral-200 text-neutral-600" onclick="closeEditModal()">✕</button>
+	<div class="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onclick="closeEditModal()"></div>
+	<div class="relative max-w-2xl mx-auto mt-8 bg-white rounded-2xl shadow-2xl border border-neutral-200 max-h-[90vh] overflow-hidden flex flex-col transform transition-all duration-300 scale-95 animate-modal-in">
+		<div class="flex items-center justify-between px-6 py-5 border-b bg-gradient-to-r from-maroon-600 to-maroon-700">
+			<div class="flex items-center gap-3">
+				<div class="p-2 bg-white/20 backdrop-blur-sm rounded-lg">
+					<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+					</svg>
+				</div>
+				<h3 class="text-xl font-bold text-white">Edit Holiday</h3>
+			</div>
+			<button class="h-9 w-9 inline-flex items-center justify-center rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-all duration-200" onclick="closeEditModal()">
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+				</svg>
+			</button>
 		</div>
 		<div class="flex-1 overflow-y-auto p-6">
 			<form method="post" id="editForm" class="space-y-4">
@@ -460,9 +590,16 @@ foreach ($holidays as $holiday) {
 						<span class="text-sm text-neutral-700">Active (applies to pricing)</span>
 					</label>
 				</div>
-				<div class="flex justify-end gap-2 pt-4 border-t">
-					<button type="button" class="px-4 py-2 rounded border hover:bg-neutral-100" onclick="closeEditModal()">Cancel</button>
-					<button type="submit" class="px-4 py-2 rounded bg-maroon-700 text-white hover:bg-maroon-800">Update Holiday</button>
+				<div class="flex justify-end gap-3 pt-5 border-t bg-gradient-to-r from-neutral-50 to-neutral-100 -mx-6 -mb-6 px-6 py-5">
+					<button type="button" class="px-5 py-2.5 rounded-xl border-2 border-neutral-300 text-neutral-700 hover:bg-white hover:border-neutral-400 transition-all duration-200 font-semibold shadow-sm" onclick="closeEditModal()">Cancel</button>
+					<button type="submit" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-maroon-600 to-maroon-700 text-white hover:from-maroon-700 hover:to-maroon-800 transition-all duration-200 shadow-lg hover:shadow-xl font-semibold transform hover:scale-105">
+						<span class="flex items-center gap-2">
+							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+							</svg>
+							Update Holiday
+						</span>
+					</button>
 				</div>
 			</form>
 		</div>
@@ -528,6 +665,22 @@ function openEditModal(holiday) {
 function closeEditModal() {
 	document.getElementById('editModal').classList.add('hidden');
 }
+
+// Add animations
+const style = document.createElement('style');
+style.textContent = `
+	@keyframes fade-in {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}
+	@keyframes modal-in {
+		from { transform: scale(0.95); opacity: 0; }
+		to { transform: scale(1); opacity: 1; }
+	}
+	.animate-fade-in { animation: fade-in 0.2s ease-out; }
+	.animate-modal-in { animation: modal-in 0.3s ease-out; }
+`;
+document.head.appendChild(style);
 </script>
 
 <?php require_once __DIR__ . '/../partials/footer.php'; ?>
