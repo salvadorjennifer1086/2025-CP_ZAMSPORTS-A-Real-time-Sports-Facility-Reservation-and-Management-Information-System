@@ -102,68 +102,115 @@ foreach ($facilities as $facility) {
 }
 ?>
 
-<div class="mb-8">
-	<div class="flex items-center justify-between mb-3">
-		<div>
-			<h1 class="text-3xl font-bold text-maroon-700 mb-2">Facility Pricing Options</h1>
-			<p class="text-neutral-600">Configure add-ons and pricing options for facilities</p>
-		</div>
-		<div class="flex items-center gap-2 text-sm">
-			<span class="px-3 py-1 rounded-full bg-maroon-100 text-maroon-700 font-medium">
-				<?php 
-				$totalOptions = 0;
-				foreach ($grouped as $opts) {
-					$totalOptions += count($opts);
-				}
-				echo $totalOptions; 
-				?> Total Options
-			</span>
-			<span class="px-3 py-1 rounded-full bg-neutral-100 text-neutral-700 font-medium">
-				<?php echo count($grouped); ?> Facilities
-			</span>
+<!-- Success/Error Messages -->
+<?php if (!empty($successMessage) || !empty($errorMessage)): ?>
+<div class="mb-6">
+	<?php if (!empty($successMessage)): ?>
+	<div class="bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 rounded-lg p-4 shadow-sm animate-fade-in">
+		<div class="flex items-center gap-3">
+			<div class="flex-shrink-0">
+				<svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+				</svg>
+			</div>
+			<div class="flex-1">
+				<p class="text-sm font-semibold text-green-800"><?php echo htmlspecialchars($successMessage); ?></p>
+			</div>
 		</div>
 	</div>
-	<div class="flex items-center gap-3">
-		<button class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-maroon-700 text-white hover:bg-maroon-800 transition-colors shadow-sm font-medium" onclick="openAddOptionModal()">
-			<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-			</svg>
-			Add Pricing Option
-		</button>
+	<?php endif; ?>
+	<?php if (!empty($errorMessage)): ?>
+	<div class="bg-gradient-to-r from-red-50 to-rose-50 border-l-4 border-red-500 rounded-lg p-4 shadow-sm animate-fade-in">
+		<div class="flex items-center gap-3">
+			<div class="flex-shrink-0">
+				<svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+				</svg>
+			</div>
+			<div class="flex-1">
+				<p class="text-sm font-semibold text-red-800"><?php echo htmlspecialchars($errorMessage); ?></p>
+			</div>
+		</div>
+	</div>
+	<?php endif; ?>
+</div>
+<?php endif; ?>
+
+<div class="mb-8">
+	<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+		<div>
+			<div class="flex items-center gap-3 mb-2">
+				<div class="p-2 bg-gradient-to-br from-maroon-600 to-maroon-800 rounded-xl shadow-lg">
+					<svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+				</div>
+				<div>
+					<h1 class="text-3xl font-bold text-maroon-700">Facility Pricing Options</h1>
+					<p class="text-neutral-600 mt-1">Configure add-ons and pricing options for facilities</p>
+				</div>
+			</div>
+		</div>
+		<div class="flex items-center gap-3">
+			<div class="flex items-center gap-2 text-sm">
+				<div class="px-4 py-2 rounded-xl bg-gradient-to-r from-maroon-100 to-maroon-50 border border-maroon-200 text-maroon-700 font-semibold shadow-sm">
+					<?php 
+					$totalOptions = 0;
+					foreach ($grouped as $opts) {
+						$totalOptions += count($opts);
+					}
+					echo $totalOptions; 
+					?> Options
+				</div>
+				<div class="px-4 py-2 rounded-xl bg-neutral-100 border border-neutral-200 text-neutral-700 font-semibold shadow-sm">
+					<?php echo count($grouped); ?> Facilities
+				</div>
+			</div>
+			<button class="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-maroon-700 to-maroon-800 text-white hover:from-maroon-800 hover:to-maroon-900 transition-all duration-200 shadow-lg hover:shadow-xl font-semibold transform hover:scale-105" onclick="openAddOptionModal()">
+				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+				</svg>
+				Add Pricing Option
+			</button>
+		</div>
 	</div>
 </div>
 
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 	<?php foreach ($grouped as $facilityName => $opts): ?>
-	<div class="bg-white rounded-xl shadow-sm border border-neutral-200 overflow-hidden hover:shadow-md transition-shadow duration-200">
-		<div class="px-5 py-4 border-b <?php echo empty($opts) ? 'bg-gradient-to-r from-neutral-50 to-neutral-100' : 'bg-gradient-to-r from-maroon-50 to-maroon-100'; ?>">
+	<div class="bg-white rounded-2xl shadow-md border border-neutral-200 overflow-hidden hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+		<div class="px-6 py-5 border-b <?php echo empty($opts) ? 'bg-gradient-to-r from-neutral-50 via-neutral-100 to-neutral-50' : 'bg-gradient-to-r from-maroon-500 via-maroon-600 to-maroon-700'; ?>">
 			<div class="flex items-start justify-between">
 				<div class="flex-1">
-					<div class="flex items-center gap-2 mb-1">
-						<svg class="w-5 h-5 <?php echo empty($opts) ? 'text-neutral-500' : 'text-maroon-600'; ?>" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
-						</svg>
-						<h3 class="text-lg font-semibold <?php echo empty($opts) ? 'text-neutral-700' : 'text-maroon-700'; ?>"><?php echo htmlspecialchars($facilityName); ?></h3>
+					<div class="flex items-center gap-3 mb-2">
+						<div class="p-2 <?php echo empty($opts) ? 'bg-neutral-200' : 'bg-white/20 backdrop-blur-sm'; ?> rounded-lg">
+							<svg class="w-5 h-5 <?php echo empty($opts) ? 'text-neutral-600' : 'text-white'; ?>" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+							</svg>
+						</div>
+						<h3 class="text-lg font-bold <?php echo empty($opts) ? 'text-neutral-800' : 'text-white'; ?>"><?php echo htmlspecialchars($facilityName); ?></h3>
 					</div>
-					<div class="flex items-center gap-2 mt-2">
-						<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium <?php echo empty($opts) ? 'bg-neutral-200 text-neutral-700' : 'bg-maroon-200 text-maroon-800'; ?>">
+					<div class="flex items-center gap-2">
+						<span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold <?php echo empty($opts) ? 'bg-neutral-200 text-neutral-700' : 'bg-white/30 backdrop-blur-sm text-white border border-white/40'; ?>">
 							<?php echo count($opts); ?> <?php echo count($opts) === 1 ? 'option' : 'options'; ?>
 						</span>
 						<?php if (empty($opts)): ?>
-						<span class="text-xs text-neutral-500">No options yet</span>
+						<span class="text-xs <?php echo empty($opts) ? 'text-neutral-500' : 'text-white/80'; ?>">No options yet</span>
 						<?php endif; ?>
 					</div>
 				</div>
 			</div>
 		</div>
-		<div class="p-5">
+		<div class="p-6">
 			<?php if (empty($opts)): ?>
-			<div class="text-center py-8">
-				<svg class="w-12 h-12 mx-auto text-neutral-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-				</svg>
-				<p class="text-sm text-neutral-500 mb-4">No pricing options configured</p>
-				<button class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-maroon-700 text-white hover:bg-maroon-800 transition-colors text-sm font-medium shadow-sm" onclick="openAddOptionModal('<?php echo htmlspecialchars($facilityName); ?>')">
+			<div class="text-center py-10">
+				<div class="w-20 h-20 mx-auto mb-4 rounded-full bg-gradient-to-br from-neutral-100 to-neutral-200 flex items-center justify-center">
+					<svg class="w-10 h-10 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+				</div>
+				<p class="text-sm font-medium text-neutral-600 mb-5">No pricing options configured</p>
+				<button class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-maroon-600 to-maroon-700 text-white hover:from-maroon-700 hover:to-maroon-800 transition-all duration-200 text-sm font-semibold shadow-md hover:shadow-lg transform hover:scale-105" onclick="openAddOptionModal('<?php echo htmlspecialchars($facilityName); ?>')">
 					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
 					</svg>
@@ -173,66 +220,85 @@ foreach ($facilities as $facility) {
 			<?php else: ?>
 			<div class="space-y-3">
 				<?php foreach ($opts as $opt): ?>
-				<div class="group relative bg-gradient-to-br from-white to-neutral-50 border border-neutral-200 rounded-lg p-4 hover:border-maroon-300 hover:shadow-sm transition-all duration-200">
+				<div class="group relative bg-gradient-to-br from-white via-neutral-50 to-white border-2 border-neutral-200 rounded-xl p-4 hover:border-maroon-400 hover:shadow-lg transition-all duration-300 transform hover:scale-[1.02]">
 					<div class="flex items-start justify-between gap-3">
 						<div class="flex-1 min-w-0">
 							<div class="flex items-center gap-2 mb-2">
-								<h4 class="font-semibold text-neutral-900 text-sm"><?php echo htmlspecialchars($opt['name']); ?></h4>
-								<?php if (!$opt['is_active']): ?>
-								<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-neutral-200 text-neutral-600">Inactive</span>
+								<h4 class="font-bold text-neutral-900 text-sm"><?php echo htmlspecialchars($opt['name']); ?></h4>
+								<?php if ($opt['is_active']): ?>
+								<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700 border border-green-200">
+									<svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+										<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+									</svg>
+									Active
+								</span>
+								<?php else: ?>
+								<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-neutral-200 text-neutral-600 border border-neutral-300">Inactive</span>
 								<?php endif; ?>
 							</div>
 							<?php if (!empty($opt['description'])): ?>
-							<p class="text-xs text-neutral-600 mb-2 line-clamp-2"><?php echo htmlspecialchars($opt['description']); ?></p>
+							<p class="text-xs text-neutral-600 mb-3 line-clamp-2 leading-relaxed"><?php echo htmlspecialchars($opt['description']); ?></p>
 							<?php endif; ?>
-							<div class="flex items-center gap-3 mt-3">
-								<div class="flex items-center gap-1.5">
-									<span class="text-xs text-neutral-500">Type:</span>
-									<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">
+							<div class="flex items-center justify-between mt-3 pt-3 border-t border-neutral-200">
+								<div class="flex items-center gap-2">
+									<span class="text-xs text-neutral-500 font-medium">Type:</span>
+									<span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200">
 										<?php 
 										$typeIcons = ['hour' => '⏰', 'day' => '📅', 'session' => '🎫'];
 										echo ($typeIcons[$opt['pricing_type']] ?? '') . ' ' . ucfirst($opt['pricing_type']);
 										?>
 									</span>
 								</div>
-								<div class="flex items-center gap-1">
-									<span class="text-lg font-bold text-maroon-700">₱<?php echo number_format((float)$opt['price_per_unit'], 2); ?></span>
-									<span class="text-xs text-neutral-500">/<?php echo $opt['pricing_type'] === 'hour' ? 'hr' : ($opt['pricing_type'] === 'day' ? 'day' : 'session'); ?></span>
+								<div class="flex items-center gap-1.5">
+									<span class="text-xl font-bold bg-gradient-to-r from-maroon-600 to-maroon-800 bg-clip-text text-transparent">₱<?php echo number_format((float)$opt['price_per_unit'], 2); ?></span>
+									<span class="text-xs text-neutral-500 font-medium">/<?php echo $opt['pricing_type'] === 'hour' ? 'hr' : ($opt['pricing_type'] === 'day' ? 'day' : 'session'); ?></span>
 								</div>
 							</div>
 							<?php if ($opt['sort_order'] > 0): ?>
-							<div class="mt-2 text-xs text-neutral-400">Order: <?php echo (int)$opt['sort_order']; ?></div>
+							<div class="mt-2 text-xs text-neutral-400 flex items-center gap-1">
+								<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+								</svg>
+								Order: <?php echo (int)$opt['sort_order']; ?>
+							</div>
 							<?php endif; ?>
 						</div>
-						<button class="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-red-50 text-red-600 hover:text-red-700" type="button" onclick="document.getElementById('delete<?php echo (int)$opt['id']; ?>').classList.remove('hidden')" title="Delete option">
-							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<button class="opacity-0 group-hover:opacity-100 transition-all duration-200 p-2 rounded-lg hover:bg-red-50 text-red-500 hover:text-red-700 hover:scale-110" type="button" onclick="document.getElementById('delete<?php echo (int)$opt['id']; ?>').classList.remove('hidden')" title="Delete option">
+							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
 							</svg>
 						</button>
 					</div>
 				</div>
 				<div id="delete<?php echo (int)$opt['id']; ?>" class="hidden fixed inset-0 z-50">
-					<div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="document.getElementById('delete<?php echo (int)$opt['id']; ?>').classList.add('hidden')"></div>
-					<div class="relative max-w-md mx-auto mt-32 bg-white rounded-xl shadow-xl border border-neutral-200">
+					<div class="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onclick="document.getElementById('delete<?php echo (int)$opt['id']; ?>').classList.add('hidden')"></div>
+					<div class="relative max-w-md mx-auto mt-32 bg-white rounded-2xl shadow-2xl border border-neutral-200 transform transition-all duration-300 scale-95 animate-modal-in">
 						<div class="p-6">
-							<div class="flex items-center mb-4">
-								<div class="flex-shrink-0 w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
-									<svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<div class="flex items-center mb-5">
+								<div class="flex-shrink-0 w-14 h-14 rounded-full bg-gradient-to-br from-red-100 to-red-200 flex items-center justify-center shadow-lg">
+									<svg class="w-7 h-7 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
 									</svg>
 								</div>
 								<div class="ml-4">
-									<h3 class="text-lg font-semibold text-neutral-900">Delete Pricing Option</h3>
-									<p class="text-sm text-neutral-600">This action cannot be undone</p>
+									<h3 class="text-xl font-bold text-neutral-900">Delete Pricing Option</h3>
+									<p class="text-sm text-neutral-600 mt-1">This action cannot be undone</p>
 								</div>
 							</div>
-							<p class="text-neutral-700 mb-6">Are you sure you want to delete <span class="font-semibold text-maroon-700">"<?php echo htmlspecialchars($opt['name']); ?>"</span>? This will permanently remove the pricing option.</p>
+							<p class="text-neutral-700 mb-6 leading-relaxed">Are you sure you want to delete <span class="font-bold text-maroon-700">"<?php echo htmlspecialchars($opt['name']); ?>"</span>? This will permanently remove the pricing option from the system.</p>
 							<form method="post">
 								<input type="hidden" name="action" value="delete" />
 								<input type="hidden" name="id" value="<?php echo (int)$opt['id']; ?>" />
 								<div class="flex justify-end gap-3">
-									<button class="px-4 py-2 rounded-lg border border-neutral-300 text-neutral-700 hover:bg-neutral-50 transition-colors" type="button" onclick="document.getElementById('delete<?php echo (int)$opt['id']; ?>').classList.add('hidden')">Cancel</button>
-									<button class="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors shadow-sm" type="submit">Delete Option</button>
+									<button class="px-5 py-2.5 rounded-xl border-2 border-neutral-300 text-neutral-700 hover:bg-neutral-50 hover:border-neutral-400 transition-all duration-200 font-semibold shadow-sm" type="button" onclick="document.getElementById('delete<?php echo (int)$opt['id']; ?>').classList.add('hidden')">Cancel</button>
+									<button class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-red-700 text-white hover:from-red-700 hover:to-red-800 transition-all duration-200 shadow-lg hover:shadow-xl font-semibold transform hover:scale-105" type="submit">
+										<span class="flex items-center gap-2">
+											<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+											</svg>
+											Delete Option
+										</span>
+									</button>
 								</div>
 							</form>
 						</div>
@@ -247,11 +313,18 @@ foreach ($facilities as $facility) {
 </div>
 
 <div id="addOptionModal" class="hidden fixed inset-0 z-50 overflow-y-auto">
-	<div class="absolute inset-0 bg-black/50 backdrop-blur-sm close-modal" onclick="document.getElementById('addOptionModal').classList.add('hidden')"></div>
-	<div class="relative max-w-5xl mx-auto my-8 bg-white rounded-xl shadow-2xl border border-neutral-200 flex flex-col max-h-[90vh]">
-		<div class="flex items-center justify-between px-6 py-4 border-b bg-neutral-50 rounded-t-xl sticky top-0 z-10">
-			<h3 class="text-lg font-semibold text-maroon-700">Add Pricing Option</h3>
-			<button class="text-neutral-500 hover:text-neutral-700 hover:bg-neutral-200 rounded-full p-1.5 transition-colors close-modal" onclick="document.getElementById('addOptionModal').classList.add('hidden')">
+	<div class="absolute inset-0 bg-black/60 backdrop-blur-sm close-modal animate-fade-in" onclick="document.getElementById('addOptionModal').classList.add('hidden')"></div>
+	<div class="relative max-w-5xl mx-auto my-8 bg-white rounded-2xl shadow-2xl border border-neutral-200 flex flex-col max-h-[90vh] transform transition-all duration-300 scale-95 animate-modal-in">
+		<div class="flex items-center justify-between px-6 py-5 border-b bg-gradient-to-r from-maroon-600 to-maroon-700 rounded-t-2xl sticky top-0 z-10">
+			<div class="flex items-center gap-3">
+				<div class="p-2 bg-white/20 backdrop-blur-sm rounded-lg">
+					<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+					</svg>
+				</div>
+				<h3 class="text-xl font-bold text-white">Add Pricing Option</h3>
+			</div>
+			<button class="text-white/80 hover:text-white hover:bg-white/20 rounded-full p-2 transition-all duration-200 close-modal" onclick="document.getElementById('addOptionModal').classList.add('hidden')">
 				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
 				</svg>
@@ -347,9 +420,16 @@ foreach ($facilities as $facility) {
 			</div>
 			</form>
 		</div>
-		<div class="px-6 py-4 border-t bg-neutral-50 rounded-b-xl sticky bottom-0 flex justify-end gap-3">
-			<button class="px-5 py-2.5 rounded-lg border border-neutral-300 text-neutral-700 hover:bg-neutral-100 transition-colors font-medium close-modal" type="button" onclick="document.getElementById('addOptionModal').classList.add('hidden')">Cancel</button>
-			<button class="px-5 py-2.5 rounded-lg bg-maroon-700 text-white hover:bg-maroon-800 transition-colors shadow-sm font-medium" type="submit" form="pricingOptionForm">Create Option</button>
+		<div class="px-6 py-5 border-t bg-gradient-to-r from-neutral-50 to-neutral-100 rounded-b-2xl sticky bottom-0 flex justify-end gap-3">
+			<button class="px-6 py-3 rounded-xl border-2 border-neutral-300 text-neutral-700 hover:bg-white hover:border-neutral-400 transition-all duration-200 font-semibold shadow-sm hover:shadow-md" type="button" onclick="document.getElementById('addOptionModal').classList.add('hidden')">Cancel</button>
+			<button class="px-6 py-3 rounded-xl bg-gradient-to-r from-maroon-600 to-maroon-700 text-white hover:from-maroon-700 hover:to-maroon-800 transition-all duration-200 shadow-lg hover:shadow-xl font-semibold transform hover:scale-105" type="submit" form="pricingOptionForm">
+				<span class="flex items-center gap-2">
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+					</svg>
+					Create Option
+				</span>
+			</button>
 		</div>
 	</div>
 </div>
@@ -484,14 +564,24 @@ function showToast(message, type = 'success') {
 	setTimeout(() => toast.remove(), 5000);
 }
 
-// Add slide-in animation
+// Add animations
 const style = document.createElement('style');
 style.textContent = `
 	@keyframes slide-in {
 		from { transform: translateX(100%); opacity: 0; }
 		to { transform: translateX(0); opacity: 1; }
 	}
+	@keyframes fade-in {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}
+	@keyframes modal-in {
+		from { transform: scale(0.95); opacity: 0; }
+		to { transform: scale(1); opacity: 1; }
+	}
 	.animate-slide-in { animation: slide-in 0.3s ease-out; }
+	.animate-fade-in { animation: fade-in 0.2s ease-out; }
+	.animate-modal-in { animation: modal-in 0.3s ease-out; }
 `;
 document.head.appendChild(style);
 
