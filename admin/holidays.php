@@ -223,8 +223,8 @@ foreach ($holidays as $holiday) {
 	<div class="flex items-start gap-4">
 		<div class="flex-shrink-0 p-2 bg-blue-100 rounded-lg">
 			<svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-			</svg>
+			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+		</svg>
 		</div>
 		<div class="flex-1">
 			<h3 class="text-base font-bold text-blue-900 mb-2">How Holidays Affect Pricing</h3>
@@ -244,8 +244,8 @@ foreach ($holidays as $holiday) {
 	<div class="flex items-start gap-4">
 		<div class="flex-shrink-0 p-2 bg-yellow-100 rounded-lg">
 			<svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-			</svg>
+			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+		</svg>
 		</div>
 		<div>
 			<h3 class="text-base font-bold text-yellow-900 mb-2">Database Migration Required</h3>
@@ -261,14 +261,14 @@ foreach ($holidays as $holiday) {
 			<div class="p-2 bg-white/20 backdrop-blur-sm rounded-lg">
 				<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-				</svg>
-			</div>
-			<div>
+		</svg>
+</div>
+		<div>
 				<h2 class="text-lg font-bold text-white">Add New Holiday</h2>
 				<p class="text-sm text-white/90 mt-0.5">Recurring holidays repeat every year (e.g., Christmas, New Year). One-time holidays are for specific dates only.</p>
-			</div>
 		</div>
 	</div>
+</div>
 	<div class="p-6">
 		<form method="post" class="space-y-4">
 			<input type="hidden" name="action" value="create" />
@@ -374,14 +374,14 @@ foreach ($holidays as $holiday) {
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
 								</svg>
 								<span class="font-medium">
-									<?php 
-									if ($holiday['recurring_month'] && $holiday['recurring_day']) {
-										$month_name = date('F', mktime(0, 0, 0, $holiday['recurring_month'], 1));
-										echo $month_name . ' ' . $holiday['recurring_day'];
-									}
-									?>
+							<?php 
+							if ($holiday['recurring_month'] && $holiday['recurring_day']) {
+								$month_name = date('F', mktime(0, 0, 0, $holiday['recurring_month'], 1));
+								echo $month_name . ' ' . $holiday['recurring_day'];
+							}
+							?>
 								</span>
-							</div>
+						</div>
 							<span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200">
 								<svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
