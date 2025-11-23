@@ -133,6 +133,29 @@ function nav_active(string $path): bool {
 			<?php if ($user): ?>
 			<?php $profileUrl = ($user['role']==='admin' || $user['role']==='staff') ? base_url('admin/profile.php') : base_url('profile.php'); ?>
 			<?php $activeProfile = nav_active('profile.php') || nav_active('admin/profile.php'); ?>
+
+			<?php 
+			if ($user && ($user['role'] === 'admin' || $user['role'] === 'staff')) {
+				require_once __DIR__ . '/../lib/notifications.php';
+				$unread_notifications = get_unread_notification_count();
+			?>
+			<a class="nav-link block px-3 py-2.5 rounded-md transition-all duration-200 <?php echo nav_active('admin/notifications.php') ? 'bg-maroon-800 text-white shadow-sm' : 'text-maroon-100 hover:bg-maroon-600 hover:text-white'; ?>" href="<?php echo base_url('admin/notifications.php'); ?>">
+				<svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+				</svg>
+				<span class="flex-1">Notifications</span>
+				<?php if ($unread_notifications > 0): ?>
+				<span class="ml-2 px-2 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full"><?php echo $unread_notifications; ?></span>
+				<?php endif; ?>
+			</a>
+			<a class="nav-link block px-3 py-2.5 rounded-md transition-all duration-200 <?php echo nav_active('admin/payment_settings.php') ? 'bg-maroon-800 text-white shadow-sm' : 'text-maroon-100 hover:bg-maroon-600 hover:text-white'; ?>" href="<?php echo base_url('admin/payment_settings.php'); ?>">
+				<svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+				</svg>
+				<span>Payment Settings</span>
+			</a>
+			<?php } ?>
+			
 			<a class="nav-link block px-3 py-2.5 rounded-md transition-all duration-200 <?php echo $activeProfile ? 'bg-maroon-800 text-white shadow-sm' : 'text-maroon-100 hover:bg-maroon-600 hover:text-white'; ?>" href="<?php echo $profileUrl; ?>">
 				<svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
@@ -211,6 +234,8 @@ function nav_active(string $path): bool {
 				</svg>
 				<span>Activity Logs</span>
 			</a>
+
+			
 			<?php endif; ?>
 		</nav>
 		
@@ -234,6 +259,6 @@ function nav_active(string $path): bool {
 	
 	<!-- Main Content Area with Sidebar Offset -->
 	<div class="flex-1 ml-64">
-		<main class="max-w-6xl mx-auto px-4 py-6">
+		<main class="max-w-5xl mx-auto px-8 py-6 ml-8">
 
 

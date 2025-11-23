@@ -159,7 +159,8 @@ $ins = db()->prepare('INSERT INTO reservations (user_id, facility_id, booking_ty
 	exit;
 }
 
-header('Location: ' . base_url('bookings.php?created=1'));
+// Redirect to payment page
+header('Location: ' . base_url('payment.php?id='.$resId));
 exit;
 
 

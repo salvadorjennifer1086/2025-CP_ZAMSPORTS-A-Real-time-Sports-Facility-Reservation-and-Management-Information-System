@@ -43,7 +43,12 @@ if ($dateTo) {
 	$params[':date_to'] = $dateTo;
 }
 
-$sql = "SELECT r.*, f.name AS facility_name, f.image_url AS facility_image, c.name AS category_name, u.full_name AS verifier_name
+// Auto-fix: Update status for paid and verified reservations that still have pending status
+// This fixes existing reservations verified before the status update fix
+db()->exec("UPDATE reservations SET status = 'confirmed' WHERE payment_status = 'paid' AND payment_verified_at IS NOT NULL AND or_number IS NOT NULL AND status = 'pending' AND user_id = " . (int)$user['id']);
+
+$sql = "SELECT r.*, f.name AS facility_name, f.image_url AS facility_image, c.name AS category_name, 
+               u.full_name AS verifier_name, u.role AS verifier_role
         FROM reservations r
         JOIN facilities f ON f.id = r.facility_id
         LEFT JOIN categories c ON c.id = f.category_id
@@ -100,6 +105,20 @@ foreach ($rows as $r) {
 }
 .reservation-card:hover {
 	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+@keyframes fade-in {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+@keyframes modal-in {
+	from { transform: scale(0.95); opacity: 0; }
+	to { transform: scale(1); opacity: 1; }
+}
+.animate-fade-in {
+	animation: fade-in 0.2s ease-out;
+}
+.animate-modal-in {
+	animation: modal-in 0.3s ease-out;
 }
 </style>
 
@@ -297,13 +316,18 @@ foreach ($rows as $r) {
 					<div class="text-sm font-medium text-neutral-900"><?php echo htmlspecialchars($r['purpose'] ?? 'N/A'); ?></div>
 			</div>
 			<div>
+					<?php if ($r['status'] !== 'cancelled'): ?>
 					<div class="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">Reservation ID</div>
 					<div class="text-sm font-medium text-neutral-900">#<?php echo (int)$r['id']; ?></div>
+					<?php else: ?>
+					<div class="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-1">Status</div>
+					<div class="text-sm font-medium text-red-600 font-semibold">Cancelled</div>
+					<?php endif; ?>
 			</div>
 		</div>
 			
 			<!-- Payment Verification Details -->
-			<?php if ($r['payment_status'] === 'paid' && $r['payment_verified_at']): ?>
+			<?php if ($r['payment_status'] === 'paid' && $r['payment_verified_at'] && $r['or_number']): ?>
 			<div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
 				<div class="flex items-start gap-3">
 					<svg class="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -314,28 +338,60 @@ foreach ($rows as $r) {
 						<div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
 							<div>
 								<span class="text-green-700 font-medium">OR Number:</span>
-								<span class="text-green-900 ml-2"><?php echo htmlspecialchars($r['or_number'] ?? 'N/A'); ?></span>
+								<span class="text-green-900 ml-2 font-semibold"><?php echo htmlspecialchars($r['or_number']); ?></span>
 							</div>
-			<div>
+							<div>
 								<span class="text-green-700 font-medium">Verified by:</span>
 								<span class="text-green-900 ml-2"><?php echo htmlspecialchars($r['verifier_name'] ?? $r['verified_by_staff_name'] ?? 'Staff'); ?></span>
-			</div>
-			<div>
+								<?php if (isset($r['verifier_role'])): ?>
+								<span class="text-green-600 text-xs ml-1">(<?php echo htmlspecialchars(ucfirst($r['verifier_role'])); ?>)</span>
+								<?php endif; ?>
+							</div>
+							<div>
 								<span class="text-green-700 font-medium">Verified on:</span>
 								<span class="text-green-900 ml-2"><?php echo (new DateTime($r['payment_verified_at']))->format('M d, Y g:i A'); ?></span>
 							</div>
 						</div>
+					</div>
+				</div>
 			</div>
-		</div>
-		</div>
-		<?php endif; ?>
+			<?php endif; ?>
+			
+			<!-- Payment Pending Alert -->
+			<?php if ($r['payment_status'] === 'pending'): ?>
+			<div class="bg-yellow-50 border-l-4 border-yellow-500 rounded-lg p-4 mb-4">
+				<div class="flex items-start gap-3">
+					<svg class="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+					</svg>
+					<div class="flex-1">
+						<h4 class="font-semibold text-yellow-800 mb-1">Payment Required</h4>
+						<p class="text-sm text-yellow-700 mb-3">Please complete your payment to confirm this reservation. Your reservation will be confirmed once payment is verified.</p>
+						<?php if ($r['payment_due_at']): 
+							$due_date = new DateTime($r['payment_due_at']);
+							$now = new DateTime();
+							if ($now < $due_date):
+						?>
+						<p class="text-xs text-yellow-600">Payment deadline: <?php echo $due_date->format('M d, Y g:i A'); ?></p>
+						<?php endif; endif; ?>
+					</div>
+				</div>
+			</div>
+			<?php endif; ?>
 			
 			<!-- Actions -->
 			<div class="flex flex-wrap gap-3 pt-4 border-t border-neutral-200">
 				<a href="<?php echo base_url('booking.php?id='.(int)$r['id']); ?>" class="px-4 py-2 bg-maroon-600 text-white rounded-lg hover:bg-maroon-700 transition-all font-semibold text-sm">
 					View Details
 				</a>
-			<?php if ($r['payment_status'] === 'paid'): ?>
+				<?php if ($r['payment_status'] === 'pending'): ?>
+				<button onclick="document.getElementById('paymentMethodModal<?php echo (int)$r['id']; ?>').classList.remove('hidden')" class="px-4 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition-all shadow-lg hover:shadow-xl font-semibold text-sm flex items-center gap-2">
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+					</svg>
+					Pay Now
+				</button>
+				<?php elseif ($r['payment_status'] === 'paid'): ?>
 				<a href="<?php echo base_url('receipt.php?id='.(int)$r['id']); ?>" target="_blank" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all font-semibold text-sm">
 					📄 View Receipt
 				</a>
@@ -344,12 +400,111 @@ foreach ($rows as $r) {
 				<span class="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg border border-blue-200 font-semibold text-sm">
 					⏰ Starts <?php echo $startTime->format('M d, Y \a\t g:i A'); ?>
 				</span>
-			<?php endif; ?>
-		</div>
+				<?php endif; ?>
+			</div>
 	</div>
 </div>
 <?php endforeach; ?>
 </div>
 <?php endif; ?>
+
+<!-- Payment Method Selection Modals -->
+<?php foreach ($rows as $r): ?>
+<?php if ($r['payment_status'] === 'pending'): ?>
+<div id="paymentMethodModal<?php echo (int)$r['id']; ?>" class="hidden fixed inset-0 z-50 overflow-y-auto">
+	<div class="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onclick="document.getElementById('paymentMethodModal<?php echo (int)$r['id']; ?>').classList.add('hidden')"></div>
+	<div class="relative min-h-screen flex items-center justify-center p-4">
+		<div class="relative bg-white rounded-2xl shadow-2xl border border-neutral-200 w-full max-w-md transform transition-all duration-300 scale-95 animate-modal-in">
+			<div class="bg-gradient-to-r from-green-600 via-green-700 to-green-800 px-6 py-5 text-white rounded-t-2xl">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-3">
+						<div class="p-2 bg-white/20 backdrop-blur-sm rounded-lg">
+							<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+							</svg>
+						</div>
+						<h3 class="text-2xl font-bold">Select Payment Method</h3>
+					</div>
+					<button onclick="document.getElementById('paymentMethodModal<?php echo (int)$r['id']; ?>').classList.add('hidden')" class="h-10 w-10 inline-flex items-center justify-center rounded-full hover:bg-white/20 transition-all duration-200 text-white">
+						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
+			</div>
+			<div class="p-6">
+				<div class="mb-4">
+					<p class="text-sm text-neutral-600 mb-2">Choose how you would like to pay for this reservation:</p>
+					<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+						<?php if ($r['status'] !== 'cancelled'): ?>
+						<div class="text-sm font-semibold text-blue-900">Reservation #<?php echo (int)$r['id']; ?></div>
+						<?php else: ?>
+						<div class="text-sm font-semibold text-red-600">Cancelled Reservation</div>
+						<?php endif; ?>
+						<div class="text-lg font-bold text-blue-700">₱<?php echo number_format((float)$r['total_amount'], 2); ?></div>
+					</div>
+				</div>
+				
+				<div class="space-y-3">
+					<!-- Physical/Manual Payment -->
+					<a href="<?php echo base_url('payment.php?id='.(int)$r['id'].'&method=manual'); ?>" class="block p-4 border-2 border-neutral-300 rounded-xl hover:border-maroon-500 hover:bg-maroon-50 transition-all cursor-pointer group">
+						<div class="flex items-center gap-4">
+							<div class="w-12 h-12 bg-gradient-to-br from-maroon-600 to-maroon-700 rounded-lg flex items-center justify-center text-white font-bold text-lg group-hover:scale-110 transition-transform">
+								💰
+							</div>
+							<div class="flex-1">
+								<div class="font-bold text-neutral-900 mb-1">Physical Payment</div>
+								<div class="text-xs text-neutral-600">Pay in person at the facility</div>
+							</div>
+							<svg class="w-5 h-5 text-neutral-400 group-hover:text-maroon-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+							</svg>
+						</div>
+					</a>
+					
+					<!-- GCash Payment -->
+					<a href="<?php echo base_url('payment.php?id='.(int)$r['id'].'&method=gcash'); ?>" class="block p-4 border-2 border-neutral-300 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer group">
+						<div class="flex items-center gap-4">
+							<div class="w-12 h-12 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center text-white font-bold text-lg group-hover:scale-110 transition-transform">
+								GC
+							</div>
+							<div class="flex-1">
+								<div class="font-bold text-neutral-900 mb-1">GCash</div>
+								<div class="text-xs text-neutral-600">Scan QR code and upload receipt</div>
+							</div>
+							<svg class="w-5 h-5 text-neutral-400 group-hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+							</svg>
+						</div>
+					</a>
+					
+					<!-- Stripe Payment -->
+					<a href="<?php echo base_url('payment.php?id='.(int)$r['id'].'&method=stripe'); ?>" class="block p-4 border-2 border-neutral-300 rounded-xl hover:border-purple-500 hover:bg-purple-50 transition-all cursor-pointer group">
+						<div class="flex items-center gap-4">
+							<div class="w-12 h-12 bg-gradient-to-br from-purple-600 to-purple-700 rounded-lg flex items-center justify-center text-white font-bold text-lg group-hover:scale-110 transition-transform">
+								💳
+							</div>
+							<div class="flex-1">
+								<div class="font-bold text-neutral-900 mb-1">Credit/Debit Card</div>
+								<div class="text-xs text-neutral-600">Pay securely with Stripe</div>
+							</div>
+							<svg class="w-5 h-5 text-neutral-400 group-hover:text-purple-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+							</svg>
+						</div>
+					</a>
+				</div>
+				
+				<div class="mt-6 pt-4 border-t">
+					<button onclick="document.getElementById('paymentMethodModal<?php echo (int)$r['id']; ?>').classList.add('hidden')" class="w-full px-4 py-2 border-2 border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-50 transition-all font-semibold">
+						Cancel
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<?php endif; ?>
+<?php endforeach; ?>
 
 <?php require_once __DIR__ . '/partials/footer.php'; ?>
