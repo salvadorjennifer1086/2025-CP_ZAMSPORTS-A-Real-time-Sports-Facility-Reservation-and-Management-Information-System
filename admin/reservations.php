@@ -3,9 +3,17 @@
 require_once __DIR__ . '/../lib/db.php';
 require_once __DIR__ . '/../lib/auth.php';
 require_once __DIR__ . '/../lib/audit.php';
+require_once __DIR__ . '/../lib/notifications.php';
 require_role(['admin','staff']);
 
 $admin = current_user();
+
+// Mark notification as read if viewing from notification
+if (isset($_GET['notification_id'])) {
+	$notification_id = (int)$_GET['notification_id'];
+	require_once __DIR__ . '/../lib/notifications.php';
+	mark_notification_read($notification_id, $admin['id']);
+}
 
 // Verify payment action
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -22,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 				$oldData = $oldStmt->fetch();
 				
 				$upd = db()->prepare("UPDATE reservations SET payment_status='paid', payment_verified_at=NOW(), or_number=:orno, verified_by_staff_name=:vname, payment_verified_by=:aid, status=IF(status='pending','confirmed',status) WHERE id=:id");
-				$upd->execute([':orno'=>$or, ':vname'=>$admin['full_name'], ':aid'=>$admin['id'], ':id'=>$id]);
+				$upd->execute([':orno'=>$or, ':vname'=>$admin['full_name'] . ' (' . ucfirst($admin['role']) . ')', ':aid'=>$admin['id'], ':id'=>$id]);
 				
 				// Get new values
 				$newStmt = db()->prepare("SELECT status, payment_status FROM reservations WHERE id=:id");
@@ -47,6 +55,158 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 			header('Location: reservations.php' . (!empty($_GET) ? '?' . http_build_query($_GET) : ''));
 			exit;
 		}
+	} elseif ($action === 'add_or') {
+		$id = (int)($_POST['id'] ?? 0);
+		$or = trim($_POST['or_number'] ?? '');
+		if ($id && $or) {
+			db()->beginTransaction();
+			try {
+				// Get old status for audit
+				$oldStmt = db()->prepare("SELECT status FROM reservations WHERE id=:id");
+				$oldStmt->execute([':id' => $id]);
+				$oldData = $oldStmt->fetch();
+				
+				// Update OR number, verification details, and status
+				$upd = db()->prepare("UPDATE reservations SET or_number=:orno, verified_by_staff_name=:vname, payment_verified_by=:aid, payment_verified_at=IF(payment_verified_at IS NULL, NOW(), payment_verified_at), status=IF(status='pending','confirmed',status) WHERE id=:id AND payment_status='paid'");
+				$upd->execute([':orno'=>$or, ':vname'=>$admin['full_name'] . ' (' . ucfirst($admin['role']) . ')', ':aid'=>$admin['id'], ':id'=>$id]);
+				
+				// Get new status for audit
+				$newStmt = db()->prepare("SELECT status FROM reservations WHERE id=:id");
+				$newStmt->execute([':id' => $id]);
+				$newData = $newStmt->fetch();
+				
+				$log = db()->prepare('INSERT INTO payment_logs (reservation_id, action, admin_id, notes) VALUES (:rid, "verified", :aid, :notes)');
+				$log->execute([':rid'=>$id, ':aid'=>$admin['id'], ':notes'=>'OR number added: '.$or.' by '.$admin['full_name']]);
+				
+				// Log status change if it occurred
+				if ($oldData && $newData && $oldData['status'] !== $newData['status']) {
+					log_status_changed($id, $oldData['status'], $newData['status'], "Status changed from {$oldData['status']} to {$newData['status']} after OR number addition");
+				}
+				
+				db()->commit();
+				$_SESSION['success'] = 'OR number added successfully!';
+			} catch (Throwable $t) {
+				db()->rollBack();
+				$_SESSION['error'] = 'Failed to add OR number: ' . $t->getMessage();
+			}
+			header('Location: reservations.php' . (!empty($_GET) ? '?' . http_build_query($_GET) : ''));
+			exit;
+		}
+	} elseif ($action === 'approve_refund') {
+		// Only admins can approve refunds
+		if ($admin['role'] !== 'admin') {
+			$_SESSION['error'] = 'Only administrators can approve refunds.';
+			header('Location: reservations.php' . (!empty($_GET) ? '?' . http_build_query($_GET) : ''));
+			exit;
+		}
+		
+		$id = (int)($_POST['id'] ?? 0);
+		if ($id) {
+			require_once __DIR__ . '/../lib/payment.php';
+			
+			// Get reservation details
+			$stmt = db()->prepare("
+				SELECT r.*, f.name AS facility_name, u.full_name AS user_name, u.email AS user_email
+				FROM reservations r
+				JOIN facilities f ON f.id = r.facility_id
+				JOIN users u ON u.id = r.user_id
+				WHERE r.id = :id AND r.refund_status = 'pending' AND r.payment_method = 'stripe' AND r.payment_status = 'paid'
+			");
+			$stmt->execute([':id' => $id]);
+			$reservation = $stmt->fetch();
+			
+			if (!$reservation) {
+				$_SESSION['error'] = 'Reservation not found or refund not eligible.';
+				header('Location: reservations.php' . (!empty($_GET) ? '?' . http_build_query($_GET) : ''));
+				exit;
+			}
+			
+			db()->beginTransaction();
+			try {
+				// Process refund via Stripe
+				$refund_result = refund_stripe_payment($reservation['payment_intent_id'], null, 'requested_by_customer');
+				
+				if ($refund_result['success']) {
+					// Update reservation with refund details
+					$update = db()->prepare("
+						UPDATE reservations 
+						SET refund_status = 'processed',
+							refund_id = :refund_id,
+							refund_approved_by = :admin_id,
+							refund_approved_at = NOW(),
+							refund_metadata = :metadata
+						WHERE id = :id
+					");
+					
+					$metadata = json_encode([
+						'refund_id' => $refund_result['refund_id'],
+						'amount' => $refund_result['amount'],
+						'status' => $refund_result['status'],
+						'approved_by' => $admin['full_name'],
+						'approved_at' => date('Y-m-d H:i:s')
+					]);
+					
+					$update->execute([
+						':refund_id' => $refund_result['refund_id'],
+						':admin_id' => $admin['id'],
+						':metadata' => $metadata,
+						':id' => $id
+					]);
+					
+					// Log refund approval and processing
+					$log = db()->prepare('INSERT INTO payment_logs (reservation_id, action, admin_id, notes) VALUES (:rid, "refund_approved", :aid, :notes)');
+					$log->execute([
+						':rid' => $id,
+						':aid' => $admin['id'],
+						':notes' => "Refund approved and processed by {$admin['full_name']}. Refund ID: {$refund_result['refund_id']}, Amount: ₱{$refund_result['amount']}"
+					]);
+					
+					$log2 = db()->prepare('INSERT INTO payment_logs (reservation_id, action, admin_id, notes) VALUES (:rid, "refunded", :aid, :notes)');
+					$log2->execute([
+						':rid' => $id,
+						':aid' => $admin['id'],
+						':notes' => "Refund processed via Stripe. Refund ID: {$refund_result['refund_id']}"
+					]);
+					
+					db()->commit();
+					$_SESSION['success'] = 'Refund approved and processed successfully!';
+				} else {
+					// Refund failed
+					$update = db()->prepare("
+						UPDATE reservations 
+						SET refund_status = 'failed',
+							refund_metadata = :metadata
+						WHERE id = :id
+					");
+					
+					$metadata = json_encode([
+						'error' => $refund_result['error'],
+						'attempted_by' => $admin['full_name'],
+						'attempted_at' => date('Y-m-d H:i:s')
+					]);
+					
+					$update->execute([
+						':metadata' => $metadata,
+						':id' => $id
+					]);
+					
+					$log = db()->prepare('INSERT INTO payment_logs (reservation_id, action, admin_id, notes) VALUES (:rid, "refund_failed", :aid, :notes)');
+					$log->execute([
+						':rid' => $id,
+						':aid' => $admin['id'],
+						':notes' => "Refund approval attempted but failed: " . $refund_result['error']
+					]);
+					
+					db()->commit();
+					$_SESSION['error'] = 'Refund processing failed: ' . $refund_result['error'];
+				}
+			} catch (Throwable $t) {
+				db()->rollBack();
+				$_SESSION['error'] = 'Failed to process refund: ' . $t->getMessage();
+			}
+			header('Location: reservations.php' . (!empty($_GET) ? '?' . http_build_query($_GET) : ''));
+			exit;
+		}
 	}
 }
 
@@ -56,10 +216,6 @@ require_once __DIR__ . '/../partials/header.php';
 // Filters
 $filterStatus = $_GET['status'] ?? 'all';
 $filterPayment = $_GET['payment'] ?? 'all';
-$filterDateFrom = $_GET['date_from'] ?? '';
-$filterDateTo = $_GET['date_to'] ?? '';
-$filterUser = $_GET['user_id'] ?? '';
-$filterFacility = $_GET['facility_id'] ?? '';
 
 // Build WHERE clause
 $where = '1=1';
@@ -75,41 +231,24 @@ if ($filterPayment !== 'all') {
 	$params[':payment'] = $filterPayment;
 }
 
-if ($filterDateFrom) {
-	$where .= " AND DATE(r.start_time) >= :date_from";
-	$params[':date_from'] = $filterDateFrom;
-}
 
-if ($filterDateTo) {
-	$where .= " AND DATE(r.start_time) <= :date_to";
-	$params[':date_to'] = $filterDateTo;
-}
 
-if ($filterUser) {
-	$where .= " AND r.user_id = :user_id";
-	$params[':user_id'] = (int)$filterUser;
-}
-
-if ($filterFacility) {
-	$where .= " AND r.facility_id = :facility_id";
-	$params[':facility_id'] = (int)$filterFacility;
-}
-
-// Get all users for filter
-$users = db()->query("SELECT id, full_name, email FROM users WHERE role = 'user' ORDER BY full_name")->fetchAll();
-
-// Get all facilities for filter
-$facilities = db()->query("SELECT id, name FROM facilities WHERE is_active = 1 ORDER BY name")->fetchAll();
+// Auto-fix: Update status for paid and verified reservations that still have pending status
+// This fixes existing reservations verified before the status update fix
+db()->exec("UPDATE reservations SET status = 'confirmed' WHERE payment_status = 'paid' AND payment_verified_at IS NOT NULL AND or_number IS NOT NULL AND status = 'pending'");
 
 // Get reservations
 $sql = "SELECT r.*, f.name AS facility_name, f.image_url AS facility_image, c.name AS category_name, 
                u.full_name AS user_name, u.email AS user_email,
-               verifier.full_name AS verifier_name
+               verifier.full_name AS verifier_name,
+               verifier.role AS verifier_role,
+               refund_approver.full_name AS refund_approver_name
         FROM reservations r
         JOIN facilities f ON f.id = r.facility_id
         LEFT JOIN categories c ON c.id = f.category_id
         JOIN users u ON u.id = r.user_id
         LEFT JOIN users verifier ON verifier.id = r.payment_verified_by
+        LEFT JOIN users refund_approver ON refund_approver.id = r.refund_approved_by
         WHERE $where
         ORDER BY r.start_time DESC, r.created_at DESC";
 $stmt = db()->prepare($sql);
@@ -230,18 +369,7 @@ if (isset($_SESSION['error'])) unset($_SESSION['error']);
 </div>
 
 <!-- Statistics Cards -->
-<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-6">
-	<div class="stat-card bg-gradient-to-br from-maroon-600 via-maroon-700 to-maroon-800 text-white rounded-2xl p-5 shadow-xl border border-maroon-500/20">
-		<div class="flex items-center justify-between mb-2">
-			<div class="p-2 bg-white/20 backdrop-blur-sm rounded-lg">
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-				</svg>
-			</div>
-		</div>
-		<div class="text-3xl font-bold mb-1"><?php echo $stats['total']; ?></div>
-		<div class="text-sm font-semibold opacity-90">Total Reservations</div>
-	</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
 	<div class="stat-card bg-white rounded-2xl p-5 shadow-lg border-2 border-orange-200 hover:border-orange-300">
 		<div class="flex items-center justify-between mb-2">
 			<div class="p-2 bg-orange-100 rounded-lg">
@@ -263,17 +391,6 @@ if (isset($_SESSION['error'])) unset($_SESSION['error']);
 		</div>
 		<div class="text-3xl font-bold text-blue-600 mb-1"><?php echo $stats['confirmed']; ?></div>
 		<div class="text-sm font-semibold text-neutral-600">Confirmed</div>
-	</div>
-	<div class="stat-card bg-white rounded-2xl p-5 shadow-lg border-2 border-green-200 hover:border-green-300">
-		<div class="flex items-center justify-between mb-2">
-			<div class="p-2 bg-green-100 rounded-lg">
-				<svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-				</svg>
-			</div>
-		</div>
-		<div class="text-3xl font-bold text-green-600 mb-1"><?php echo $stats['completed']; ?></div>
-		<div class="text-sm font-semibold text-neutral-600">Completed</div>
 	</div>
 	<div class="stat-card bg-white rounded-2xl p-5 shadow-lg border-2 border-yellow-200 hover:border-yellow-300">
 		<div class="flex items-center justify-between mb-2">
@@ -302,7 +419,7 @@ if (isset($_SESSION['error'])) unset($_SESSION['error']);
 	</div>
 	<div class="p-6">
 		<form method="get" class="space-y-4">
-		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 			<!-- Status Filter -->
 			<div>
 				<label class="block text-sm font-semibold text-neutral-700 mb-2">Status</label>
@@ -312,8 +429,6 @@ if (isset($_SESSION['error'])) unset($_SESSION['error']);
 					<option value="confirmed" <?php echo $filterStatus === 'confirmed' ? 'selected' : ''; ?>>Confirmed</option>
 					<option value="completed" <?php echo $filterStatus === 'completed' ? 'selected' : ''; ?>>Completed</option>
 					<option value="cancelled" <?php echo $filterStatus === 'cancelled' ? 'selected' : ''; ?>>Cancelled</option>
-					<option value="expired" <?php echo $filterStatus === 'expired' ? 'selected' : ''; ?>>Expired</option>
-					<option value="no_show" <?php echo $filterStatus === 'no_show' ? 'selected' : ''; ?>>No Show</option>
 				</select>
 			</div>
 			
@@ -326,44 +441,6 @@ if (isset($_SESSION['error'])) unset($_SESSION['error']);
 					<option value="paid" <?php echo $filterPayment === 'paid' ? 'selected' : ''; ?>>Paid</option>
 					<option value="expired" <?php echo $filterPayment === 'expired' ? 'selected' : ''; ?>>Expired</option>
 				</select>
-			</div>
-			
-			<!-- User Filter -->
-			<div>
-				<label class="block text-sm font-semibold text-neutral-700 mb-2">User</label>
-				<select name="user_id" class="w-full border-2 border-neutral-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-maroon-500">
-					<option value="">All Users</option>
-					<?php foreach ($users as $u): ?>
-					<option value="<?php echo (int)$u['id']; ?>" <?php echo $filterUser == $u['id'] ? 'selected' : ''; ?>>
-						<?php echo htmlspecialchars($u['full_name'] . ' (' . $u['email'] . ')'); ?>
-					</option>
-					<?php endforeach; ?>
-				</select>
-			</div>
-			
-			<!-- Facility Filter -->
-			<div>
-				<label class="block text-sm font-semibold text-neutral-700 mb-2">Facility</label>
-				<select name="facility_id" class="w-full border-2 border-neutral-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-maroon-500">
-					<option value="">All Facilities</option>
-					<?php foreach ($facilities as $f): ?>
-					<option value="<?php echo (int)$f['id']; ?>" <?php echo $filterFacility == $f['id'] ? 'selected' : ''; ?>>
-						<?php echo htmlspecialchars($f['name']); ?>
-					</option>
-					<?php endforeach; ?>
-				</select>
-			</div>
-			
-			<!-- Date From -->
-			<div>
-				<label class="block text-sm font-semibold text-neutral-700 mb-2">From Date</label>
-				<input type="date" name="date_from" value="<?php echo htmlspecialchars($filterDateFrom); ?>" class="w-full border-2 border-neutral-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-maroon-500">
-			</div>
-			
-			<!-- Date To -->
-			<div>
-				<label class="block text-sm font-semibold text-neutral-700 mb-2">To Date</label>
-				<input type="date" name="date_to" value="<?php echo htmlspecialchars($filterDateTo); ?>" class="w-full border-2 border-neutral-300 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-maroon-500">
 			</div>
 		</div>
 		
@@ -402,8 +479,6 @@ if (isset($_SESSION['error'])) unset($_SESSION['error']);
 	<div class="flex flex-wrap gap-2">
 		<?php
 		$exportParams = http_build_query([
-			'date_from' => $filterDateFrom,
-			'date_to' => $filterDateTo,
 			'status' => $filterStatus,
 			'payment' => $filterPayment
 		]);
@@ -454,6 +529,7 @@ if (isset($_SESSION['error'])) unset($_SESSION['error']);
 					<th class="text-left px-5 py-4 text-sm font-bold text-white">Amount</th>
 					<th class="text-left px-5 py-4 text-sm font-bold text-white">Status</th>
 					<th class="text-left px-5 py-4 text-sm font-bold text-white">Payment</th>
+					<th class="text-left px-5 py-4 text-sm font-bold text-white">Payment Method</th>
 					<th class="text-left px-5 py-4 text-sm font-bold text-white">Actions</th>
 				</tr>
 			</thead>
@@ -530,7 +606,78 @@ if (isset($_SESSION['error'])) unset($_SESSION['error']);
 						<?php endif; ?>
 					</td>
 					<td class="px-5 py-4">
-						<div class="flex gap-2">
+						<?php 
+						$method_labels = [
+							'gcash' => 'GCash',
+							'stripe' => 'Credit/Debit Card',
+							'manual' => 'Physical Payment'
+						];
+						$method_icons = [
+							'gcash' => 'GC',
+							'stripe' => '💳',
+							'manual' => '💰'
+						];
+						$method_colors = [
+							'gcash' => 'bg-blue-100 text-blue-700 border-blue-200',
+							'stripe' => 'bg-purple-100 text-purple-700 border-purple-200',
+							'manual' => 'bg-maroon-100 text-maroon-700 border-maroon-200'
+						];
+						
+						$payment_method = $r['payment_method'] ?? 'manual';
+						$method_label = $method_labels[$payment_method] ?? 'Physical Payment';
+						$method_icon = $method_icons[$payment_method] ?? '💰';
+						$method_color = $method_colors[$payment_method] ?? 'bg-neutral-100 text-neutral-700 border-neutral-200';
+						?>
+						<div class="flex items-center gap-2">
+							<?php if ($payment_method === 'gcash'): ?>
+							<div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xs">
+								GC
+							</div>
+							<?php elseif ($payment_method === 'stripe'): ?>
+							<div class="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center text-white text-lg">
+								💳
+							</div>
+							<?php else: ?>
+							<div class="w-8 h-8 bg-maroon-600 rounded-lg flex items-center justify-center text-white text-lg">
+								💰
+							</div>
+							<?php endif; ?>
+							<div>
+								<div class="font-semibold text-sm text-neutral-900"><?php echo htmlspecialchars($method_label); ?></div>
+								<?php if ($payment_method === 'gcash' && $r['payment_transaction_id']): ?>
+								<div class="text-xs text-neutral-500 mt-0.5 font-mono">Ref: <?php echo htmlspecialchars(substr($r['payment_transaction_id'], 0, 12)); ?>...</div>
+								<?php endif; ?>
+								<?php if ($payment_method === 'gcash' && $r['payment_slip_url']): ?>
+								<button onclick="document.getElementById('viewScreenshot<?php echo (int)$r['id']; ?>').classList.remove('hidden')" class="mt-1 text-xs text-blue-600 hover:text-blue-800 underline flex items-center gap-1">
+									<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+									</svg>
+									View Receipt
+								</button>
+								<?php endif; ?>
+							</div>
+						</div>
+								<?php if ($r['payment_status'] === 'pending'): ?>
+								<div class="mt-2 px-2 py-1 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-700">
+									⏳ Awaiting payment via <?php echo htmlspecialchars($method_label); ?>
+								</div>
+								<?php endif; ?>
+								<?php if ($r['refund_status'] === 'pending'): ?>
+								<div class="mt-2 px-2 py-1 bg-orange-50 border border-orange-200 rounded text-xs text-orange-700">
+									💰 Refund pending approval
+								</div>
+								<?php elseif ($r['refund_status'] === 'processed' && $r['refund_id']): ?>
+								<div class="mt-2 px-2 py-1 bg-green-50 border border-green-200 rounded text-xs text-green-700">
+									✓ Refunded: <?php echo htmlspecialchars(substr($r['refund_id'], 0, 15)); ?>...
+								</div>
+								<?php elseif ($r['refund_status'] === 'failed'): ?>
+								<div class="mt-2 px-2 py-1 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+									✗ Refund failed
+								</div>
+								<?php endif; ?>
+					</td>
+					<td class="px-5 py-4">
+						<div class="flex flex-col gap-2">
 							<?php if ($r['payment_status'] !== 'paid'): ?>
 							<button class="px-4 py-2 rounded-xl bg-gradient-to-r from-green-600 to-green-700 text-white text-xs font-bold hover:from-green-700 hover:to-green-800 transition-all shadow-md hover:shadow-lg transform hover:scale-105" onclick="document.getElementById('verify<?php echo (int)$r['id']; ?>').classList.remove('hidden')">
 								<span class="flex items-center gap-1.5">
@@ -538,6 +685,16 @@ if (isset($_SESSION['error'])) unset($_SESSION['error']);
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
 									</svg>
 									Verify Payment
+								</span>
+							</button>
+							<?php else: ?>
+							<?php if (!$r['or_number']): ?>
+							<button class="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white text-xs font-bold hover:from-blue-700 hover:to-blue-800 transition-all shadow-md hover:shadow-lg transform hover:scale-105" onclick="document.getElementById('addOr<?php echo (int)$r['id']; ?>').classList.remove('hidden')">
+								<span class="flex items-center gap-1.5">
+									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+									</svg>
+									Add OR
 								</span>
 							</button>
 							<?php else: ?>
@@ -550,6 +707,36 @@ if (isset($_SESSION['error'])) unset($_SESSION['error']);
 								</span>
 							</span>
 							<?php endif; ?>
+							<?php endif; ?>
+							
+							<?php if ($r['status'] === 'cancelled' && $r['refund_status'] === 'pending' && $admin['role'] === 'admin'): ?>
+							<button class="px-4 py-2 rounded-xl bg-gradient-to-r from-orange-600 to-orange-700 text-white text-xs font-bold hover:from-orange-700 hover:to-orange-800 transition-all shadow-md hover:shadow-lg transform hover:scale-105" onclick="document.getElementById('approveRefund<?php echo (int)$r['id']; ?>').classList.remove('hidden')">
+								<span class="flex items-center gap-1.5">
+									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+									</svg>
+									Approve Refund
+								</span>
+							</button>
+							<?php elseif ($r['refund_status'] === 'processed'): ?>
+							<span class="px-4 py-2 rounded-xl bg-green-100 text-green-700 text-xs font-bold border-2 border-green-200">
+								<span class="flex items-center gap-1.5">
+									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+									</svg>
+									Refunded
+								</span>
+							</span>
+							<?php elseif ($r['refund_status'] === 'failed'): ?>
+							<span class="px-4 py-2 rounded-xl bg-red-100 text-red-700 text-xs font-bold border-2 border-red-200">
+								<span class="flex items-center gap-1.5">
+									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+									</svg>
+									Refund Failed
+								</span>
+							</span>
+							<?php endif; ?>
 						</div>
 					</td>
 				</tr>
@@ -559,6 +746,159 @@ if (isset($_SESSION['error'])) unset($_SESSION['error']);
 	</div>
 </div>
 <?php endif; ?>
+
+<!-- Add OR Number Modals -->
+<?php foreach ($rows as $r): ?>
+<?php if ($r['payment_status'] === 'paid' && !$r['or_number']): ?>
+<div id="addOr<?php echo (int)$r['id']; ?>" class="hidden fixed inset-0 z-50 overflow-y-auto">
+	<div class="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onclick="document.getElementById('addOr<?php echo (int)$r['id']; ?>').classList.add('hidden')"></div>
+	<div class="relative min-h-screen flex items-center justify-center p-4">
+		<div class="relative bg-white rounded-2xl shadow-2xl border border-neutral-200 w-full max-w-2xl transform transition-all duration-300 scale-95 animate-modal-in">
+			<div class="bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 px-6 py-5 text-white rounded-t-2xl">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-3">
+						<div class="p-2 bg-white/20 backdrop-blur-sm rounded-lg">
+							<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+							</svg>
+						</div>
+						<h3 class="text-2xl font-bold">Add Official Receipt Number</h3>
+					</div>
+					<button onclick="document.getElementById('addOr<?php echo (int)$r['id']; ?>').classList.add('hidden')" class="h-10 w-10 inline-flex items-center justify-center rounded-full hover:bg-white/20 transition-all duration-200 text-white">
+						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
+			</div>
+			<div class="p-6">
+				<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+					<div class="grid grid-cols-2 gap-4 text-sm">
+						<div>
+							<div class="text-blue-700 font-semibold mb-1">Reservation ID</div>
+							<div class="text-neutral-900">#<?php echo (int)$r['id']; ?></div>
+						</div>
+						<div>
+							<div class="text-blue-700 font-semibold mb-1">Payment Method</div>
+							<div class="text-neutral-900">
+								<?php 
+								$method_labels = ['gcash' => 'GCash', 'stripe' => 'Card', 'manual' => 'Manual'];
+								echo htmlspecialchars($method_labels[$r['payment_method']] ?? 'Online'); 
+								?>
+							</div>
+						</div>
+						<div>
+							<div class="text-blue-700 font-semibold mb-1">Total Amount</div>
+							<div class="text-lg font-bold text-blue-700">₱<?php echo number_format((float)$r['total_amount'], 2); ?></div>
+						</div>
+						<div>
+							<div class="text-blue-700 font-semibold mb-1">Payment Status</div>
+							<div class="text-neutral-900"><?php echo htmlspecialchars(ucfirst($r['payment_status'])); ?></div>
+						</div>
+					</div>
+				</div>
+				<form method="post" class="space-y-4">
+					<input type="hidden" name="action" value="add_or" />
+					<input type="hidden" name="id" value="<?php echo (int)$r['id']; ?>" />
+					<?php foreach ($_GET as $key => $value): ?>
+					<input type="hidden" name="<?php echo htmlspecialchars($key); ?>" value="<?php echo htmlspecialchars($value); ?>" />
+					<?php endforeach; ?>
+					<div>
+						<label class="block text-sm font-semibold text-neutral-700 mb-2">Official Receipt (OR) Number</label>
+						<input type="text" name="or_number" class="w-full border-2 border-neutral-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg tracking-wider" placeholder="Enter OR number" required autofocus />
+						<p class="text-xs text-neutral-500 mt-2">This OR number will be associated with this paid reservation.</p>
+					</div>
+					<div class="bg-neutral-50 border rounded-lg p-3">
+						<div class="text-sm text-neutral-600">
+							<div class="font-semibold text-neutral-700 mb-2">Added by</div>
+							<div>Admin: <?php echo htmlspecialchars($admin['full_name']); ?> (<?php echo htmlspecialchars(ucfirst($admin['role'])); ?>)</div>
+							<div>Date: <?php echo (new DateTime())->format('M d, Y g:i A'); ?></div>
+						</div>
+					</div>
+					<div class="flex justify-end gap-3 pt-4 border-t bg-gradient-to-r from-neutral-50 to-neutral-100 -mx-6 -mb-6 px-6 py-5 rounded-b-2xl">
+						<button type="button" class="px-6 py-3 border-2 border-neutral-300 text-neutral-700 rounded-xl hover:bg-white hover:border-neutral-400 transition-all font-semibold shadow-sm" onclick="document.getElementById('addOr<?php echo (int)$r['id']; ?>').classList.add('hidden')">Cancel</button>
+						<button type="submit" class="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg hover:shadow-xl font-semibold transform hover:scale-105">
+							<span class="flex items-center gap-2">
+								<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+								</svg>
+								Add OR Number
+							</span>
+						</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	</div>
+</div>
+<?php endif; ?>
+<?php endforeach; ?>
+
+<!-- View GCash Screenshot Modals -->
+<?php foreach ($rows as $r): ?>
+<?php if ($r['payment_method'] === 'gcash' && $r['payment_slip_url']): ?>
+<div id="viewScreenshot<?php echo (int)$r['id']; ?>" class="hidden fixed inset-0 z-50 overflow-y-auto">
+	<div class="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onclick="document.getElementById('viewScreenshot<?php echo (int)$r['id']; ?>').classList.add('hidden')"></div>
+	<div class="relative min-h-screen flex items-center justify-center p-4">
+		<div class="relative bg-white rounded-2xl shadow-2xl border border-neutral-200 w-full max-w-4xl transform transition-all duration-300 scale-95 animate-modal-in">
+			<div class="bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 px-6 py-5 text-white rounded-t-2xl">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-3">
+						<div class="p-2 bg-white/20 backdrop-blur-sm rounded-lg">
+							<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+							</svg>
+						</div>
+						<h3 class="text-2xl font-bold">GCash Payment Receipt</h3>
+					</div>
+					<button onclick="document.getElementById('viewScreenshot<?php echo (int)$r['id']; ?>').classList.add('hidden')" class="h-10 w-10 inline-flex items-center justify-center rounded-full hover:bg-white/20 transition-all duration-200 text-white">
+						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
+			</div>
+			<div class="p-6">
+				<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+					<div class="grid grid-cols-2 gap-4 text-sm">
+						<div>
+							<div class="text-blue-700 font-semibold mb-1">Reservation ID</div>
+							<div class="text-neutral-900">#<?php echo (int)$r['id']; ?></div>
+						</div>
+						<div>
+							<div class="text-blue-700 font-semibold mb-1">GCash Reference</div>
+							<div class="text-neutral-900 font-mono"><?php echo htmlspecialchars($r['payment_transaction_id'] ?? 'N/A'); ?></div>
+						</div>
+						<div>
+							<div class="text-blue-700 font-semibold mb-1">Amount</div>
+							<div class="text-lg font-bold text-blue-700">₱<?php echo number_format((float)$r['total_amount'], 2); ?></div>
+						</div>
+						<div>
+							<div class="text-blue-700 font-semibold mb-1">User</div>
+							<div class="text-neutral-900"><?php echo htmlspecialchars($r['user_name']); ?></div>
+						</div>
+					</div>
+				</div>
+				<div class="bg-neutral-50 rounded-lg p-4 mb-4">
+					<img src="<?php echo htmlspecialchars(base_url($r['payment_slip_url'])); ?>" alt="GCash Receipt" class="w-full h-auto rounded-lg border-2 border-neutral-200 shadow-lg max-h-[600px] object-contain mx-auto" />
+				</div>
+				<div class="flex justify-end gap-3 pt-4 border-t">
+					<button type="button" class="px-6 py-3 border-2 border-neutral-300 text-neutral-700 rounded-xl hover:bg-white hover:border-neutral-400 transition-all font-semibold shadow-sm" onclick="document.getElementById('viewScreenshot<?php echo (int)$r['id']; ?>').classList.add('hidden')">Close</button>
+					<a href="<?php echo htmlspecialchars(base_url($r['payment_slip_url'])); ?>" target="_blank" class="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg hover:shadow-xl font-semibold">
+						<span class="flex items-center gap-2">
+							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+							</svg>
+							Open in New Tab
+						</span>
+					</a>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+<?php endif; ?>
+<?php endforeach; ?>
 
 <!-- Verify Payment Modals -->
 <?php foreach ($rows as $r): ?>
@@ -584,7 +924,7 @@ if (isset($_SESSION['error'])) unset($_SESSION['error']);
 				</div>
 			</div>
 			<div class="p-6">
-				<div class="bg-maroon-50 border border-maroon-200 rounded-lg p-4 mb-4">
+					<div class="bg-maroon-50 border border-maroon-200 rounded-lg p-4 mb-4">
 					<div class="grid grid-cols-2 gap-4 text-sm">
 						<div>
 							<div class="text-maroon-700 font-semibold mb-1">Facility</div>
@@ -611,6 +951,87 @@ if (isset($_SESSION['error'])) unset($_SESSION['error']);
 							<div class="text-maroon-700 font-semibold mb-1">Contact</div>
 							<div class="text-neutral-900"><?php echo htmlspecialchars($r['phone_number'] ?? 'N/A'); ?></div>
 						</div>
+						<?php if ($r['payment_method'] === 'gcash' && $r['payment_slip_url']): ?>
+						<div class="col-span-2">
+							<div class="text-maroon-700 font-semibold mb-2">GCash Receipt Screenshot</div>
+							<div class="bg-white rounded-lg p-3 border border-maroon-200">
+								<img src="<?php echo htmlspecialchars(base_url($r['payment_slip_url'])); ?>" alt="GCash Receipt" class="w-full h-auto rounded border border-neutral-200 max-h-48 object-contain cursor-pointer hover:opacity-90 transition-opacity" onclick="document.getElementById('viewScreenshot<?php echo (int)$r['id']; ?>').classList.remove('hidden')" />
+								<div class="text-xs text-neutral-500 mt-2 text-center">Click image to view full size</div>
+							</div>
+						</div>
+						<?php elseif ($r['payment_method'] === 'stripe' && $r['payment_intent_id']): ?>
+						<div class="col-span-2">
+							<div class="text-maroon-700 font-semibold mb-2">Stripe Payment Details</div>
+							<div class="bg-white rounded-lg p-4 border border-maroon-200">
+								<?php
+								// Fetch Stripe payment details
+								require_once __DIR__ . '/../lib/payment_config.php';
+								$config = get_payment_config('stripe');
+								$stripe_details = null;
+								if ($config && $r['payment_intent_id']) {
+									$ch = curl_init('https://api.stripe.com/v1/checkout/sessions/' . $r['payment_intent_id']);
+									curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+									curl_setopt($ch, CURLOPT_HTTPHEADER, [
+										'Authorization: Bearer ' . $config['secret_key']
+									]);
+									$response = curl_exec($ch);
+									$http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+									curl_close($ch);
+									
+									if ($http_code === 200) {
+										$stripe_details = json_decode($response, true);
+									}
+								}
+								?>
+								<div class="space-y-3 text-sm">
+									<div class="flex justify-between py-2 border-b">
+										<span class="text-neutral-600 font-medium">Payment Intent ID:</span>
+										<span class="font-mono text-neutral-900"><?php echo htmlspecialchars($r['payment_intent_id']); ?></span>
+									</div>
+									<?php if ($r['payment_transaction_id']): ?>
+									<div class="flex justify-between py-2 border-b">
+										<span class="text-neutral-600 font-medium">Transaction ID:</span>
+										<span class="font-mono text-neutral-900"><?php echo htmlspecialchars($r['payment_transaction_id']); ?></span>
+									</div>
+									<?php endif; ?>
+									<?php if ($stripe_details): ?>
+									<div class="flex justify-between py-2 border-b">
+										<span class="text-neutral-600 font-medium">Payment Status:</span>
+										<span class="font-semibold <?php echo ($stripe_details['payment_status'] ?? '') === 'paid' ? 'text-green-600' : 'text-yellow-600'; ?>">
+											<?php echo htmlspecialchars(ucfirst($stripe_details['payment_status'] ?? 'Unknown')); ?>
+										</span>
+									</div>
+									<?php if (isset($stripe_details['amount_total'])): ?>
+									<div class="flex justify-between py-2 border-b">
+										<span class="text-neutral-600 font-medium">Amount Paid:</span>
+										<span class="font-bold text-maroon-700">₱<?php echo number_format(($stripe_details['amount_total'] ?? 0) / 100, 2); ?></span>
+									</div>
+									<?php endif; ?>
+									<?php if (isset($stripe_details['currency'])): ?>
+									<div class="flex justify-between py-2 border-b">
+										<span class="text-neutral-600 font-medium">Currency:</span>
+										<span class="text-neutral-900"><?php echo strtoupper($stripe_details['currency']); ?></span>
+									</div>
+									<?php endif; ?>
+									<?php if (isset($stripe_details['customer_details']['email'])): ?>
+									<div class="flex justify-between py-2 border-b">
+										<span class="text-neutral-600 font-medium">Customer Email:</span>
+										<span class="text-neutral-900"><?php echo htmlspecialchars($stripe_details['customer_details']['email']); ?></span>
+									</div>
+									<?php endif; ?>
+									<?php if (isset($stripe_details['created'])): ?>
+									<div class="flex justify-between py-2">
+										<span class="text-neutral-600 font-medium">Payment Date:</span>
+										<span class="text-neutral-900"><?php echo date('M d, Y g:i A', $stripe_details['created']); ?></span>
+									</div>
+									<?php endif; ?>
+									<?php else: ?>
+									<div class="text-sm text-neutral-500 italic">Unable to fetch payment details from Stripe</div>
+									<?php endif; ?>
+								</div>
+							</div>
+						</div>
+						<?php endif; ?>
 					</div>
 				</div>
 				<form method="post" class="space-y-4">
@@ -646,6 +1067,93 @@ if (isset($_SESSION['error'])) unset($_SESSION['error']);
 		</div>
 	</div>
 </div>
+<?php endforeach; ?>
+
+<!-- Approve Refund Modals -->
+<?php foreach ($rows as $r): ?>
+<?php if ($r['status'] === 'cancelled' && $r['refund_status'] === 'pending' && $admin['role'] === 'admin'): ?>
+<div id="approveRefund<?php echo (int)$r['id']; ?>" class="hidden fixed inset-0 z-50 overflow-y-auto">
+	<div class="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onclick="document.getElementById('approveRefund<?php echo (int)$r['id']; ?>').classList.add('hidden')"></div>
+	<div class="relative min-h-screen flex items-center justify-center p-4">
+		<div class="relative bg-white rounded-2xl shadow-2xl border border-neutral-200 w-full max-w-lg transform transition-all duration-300 scale-95 animate-modal-in">
+			<div class="bg-gradient-to-r from-orange-600 via-orange-700 to-orange-800 px-6 py-5 text-white rounded-t-2xl">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-3">
+						<div class="p-2 bg-white/20 backdrop-blur-sm rounded-lg">
+							<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+							</svg>
+						</div>
+						<h3 class="text-2xl font-bold">Approve Refund</h3>
+					</div>
+					<button onclick="document.getElementById('approveRefund<?php echo (int)$r['id']; ?>').classList.add('hidden')" class="h-10 w-10 inline-flex items-center justify-center rounded-full hover:bg-white/20 transition-all duration-200 text-white">
+						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
+				</div>
+			</div>
+			<div class="p-6">
+				<div class="mb-6">
+					<div class="bg-orange-50 border-l-4 border-orange-500 rounded-lg p-4 mb-4">
+						<div class="flex items-start gap-3">
+							<svg class="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+							</svg>
+							<div>
+								<p class="text-sm font-semibold text-orange-800 mb-1">Refund Request</p>
+								<p class="text-xs text-orange-700">This will process a refund via Stripe for the cancelled reservation.</p>
+							</div>
+						</div>
+					</div>
+					
+					<div class="space-y-3 text-sm">
+						<div class="flex justify-between py-2 border-b">
+							<span class="text-neutral-600 font-medium">Reservation ID:</span>
+							<span class="font-semibold text-neutral-900">#<?php echo (int)$r['id']; ?></span>
+						</div>
+						<div class="flex justify-between py-2 border-b">
+							<span class="text-neutral-600 font-medium">Facility:</span>
+							<span class="font-semibold text-neutral-900"><?php echo htmlspecialchars($r['facility_name']); ?></span>
+						</div>
+						<div class="flex justify-between py-2 border-b">
+							<span class="text-neutral-600 font-medium">User:</span>
+							<span class="font-semibold text-neutral-900"><?php echo htmlspecialchars($r['user_name']); ?></span>
+						</div>
+						<div class="flex justify-between py-2 border-b">
+							<span class="text-neutral-600 font-medium">Payment Method:</span>
+							<span class="font-semibold text-neutral-900"><?php echo $r['payment_method'] === 'stripe' ? 'Credit/Debit Card' : ucfirst($r['payment_method']); ?></span>
+						</div>
+						<div class="flex justify-between py-2">
+							<span class="text-neutral-600 font-medium">Refund Amount:</span>
+							<span class="font-bold text-lg text-orange-600">₱<?php echo number_format((float)$r['total_amount'], 2); ?></span>
+						</div>
+					</div>
+				</div>
+				
+				<form method="post" class="space-y-4">
+					<input type="hidden" name="action" value="approve_refund">
+					<input type="hidden" name="id" value="<?php echo (int)$r['id']; ?>">
+					
+					<div class="flex gap-3 pt-4 border-t">
+						<button type="button" onclick="document.getElementById('approveRefund<?php echo (int)$r['id']; ?>').classList.add('hidden')" class="flex-1 px-6 py-3 border-2 border-neutral-300 text-neutral-700 rounded-xl hover:bg-neutral-50 transition-all font-semibold">
+							Cancel
+						</button>
+						<button type="submit" class="flex-1 px-6 py-3 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-xl hover:from-orange-700 hover:to-orange-800 transition-all shadow-lg hover:shadow-xl font-semibold">
+							<span class="flex items-center justify-center gap-2">
+								<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+								</svg>
+								Approve & Process Refund
+							</span>
+						</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	</div>
+</div>
+<?php endif; ?>
 <?php endforeach; ?>
 
 <?php require_once __DIR__ . '/../partials/footer.php'; ?>
