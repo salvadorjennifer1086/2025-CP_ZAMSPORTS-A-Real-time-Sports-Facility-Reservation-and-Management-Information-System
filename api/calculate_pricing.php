@@ -274,4 +274,3 @@ echo json_encode([
 		'nighttime' => $nighttime_multiplier
 	]
 ]);
-
