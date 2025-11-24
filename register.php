@@ -72,40 +72,230 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 ?>
 
-<div class="max-w-3xl mx-auto">
-	<h1 class="text-xl font-semibold text-maroon-700 mb-4">Register</h1>
-	<?php if (isset($_SESSION['success'])): ?>
-		<div class="mb-3 p-3 rounded bg-green-50 text-green-700 border border-green-200"><?php echo htmlspecialchars($_SESSION['success']); unset($_SESSION['success']); ?></div>
-	<?php endif; ?>
-	<?php if ($error): ?><div class="mb-3 p-3 rounded bg-red-50 text-red-700 border border-red-200"><?php echo htmlspecialchars($error); ?></div><?php endif; ?>
-	<form method="post" class="bg-white p-4 rounded shadow">
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-			<div>
-				<label class="block text-sm text-neutral-700 mb-1">Full Name</label>
-				<input type="text" name="full_name" value="<?php echo htmlspecialchars($_POST['full_name'] ?? ''); ?>" class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500" required />
+<style>
+.register-container {
+	background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 50%, #fecaca 100%);
+	min-height: calc(100vh - 200px);
+	display: flex;
+	align-items: center;
+	padding: 2rem 0;
+}
+.register-card {
+	background: white;
+	border-radius: 1.5rem;
+	box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+	overflow: hidden;
+}
+.register-header {
+	background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 50%, #b91c1c 100%);
+	padding: 2.5rem;
+	text-align: center;
+	color: white;
+}
+.input-group {
+	position: relative;
+}
+.input-icon {
+	position: absolute;
+	left: 1rem;
+	top: 2.75rem;
+	color: #991b1b;
+	pointer-events: none;
+	z-index: 10;
+}
+.form-input {
+	transition: all 0.2s ease;
+}
+.form-input:focus {
+	transform: translateY(-1px);
+	box-shadow: 0 4px 12px rgba(153, 27, 27, 0.15);
+}
+@keyframes fadeInUp {
+	from {
+		opacity: 0;
+		transform: translateY(20px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+.animate-fade-in {
+	animation: fadeInUp 0.5s ease-out;
+}
+</style>
+
+<div class="register-container">
+	<div class="max-w-2xl w-full mx-auto px-4">
+		<div class="register-card animate-fade-in">
+			<!-- Header -->
+			<div class="register-header">
+				<div class="mb-4">
+					<svg class="w-16 h-16 mx-auto text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
+					</svg>
+				</div>
+				<h1 class="text-3xl font-bold mb-2">Create Your Account</h1>
+				<p class="text-white/90 text-lg">Join <?php echo APP_NAME; ?> and start booking facilities today</p>
 			</div>
+
+			<!-- Form Content -->
+			<div class="p-8">
+				<?php if (isset($_SESSION['success'])): ?>
+					<div class="mb-6 p-4 rounded-xl bg-green-50 border-l-4 border-green-500 flex items-start gap-3 animate-fade-in">
+						<svg class="w-6 h-6 text-green-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+						</svg>
 			<div>
-				<label class="block text-sm text-neutral-700 mb-1">Organization (optional)</label>
-				<input type="text" name="organization" value="<?php echo htmlspecialchars($_POST['organization'] ?? ''); ?>" class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500" />
+							<p class="font-semibold text-green-800">Success!</p>
+							<p class="text-green-700 text-sm mt-1"><?php echo htmlspecialchars($_SESSION['success']); unset($_SESSION['success']); ?></p>
+						</div>
 			</div>
+				<?php endif; ?>
+
+				<?php if ($error): ?>
+					<div class="mb-6 p-4 rounded-xl bg-red-50 border-l-4 border-red-500 flex items-start gap-3 animate-fade-in">
+						<svg class="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+						</svg>
 			<div>
-				<label class="block text-sm text-neutral-700 mb-1">Username</label>
-				<input type="text" name="username" value="<?php echo htmlspecialchars($_POST['username'] ?? ''); ?>" class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500" required />
+							<p class="font-semibold text-red-800">Registration Error</p>
+							<p class="text-red-700 text-sm mt-1"><?php echo htmlspecialchars($error); ?></p>
+						</div>
+					</div>
+				<?php endif; ?>
+
+				<form method="post" class="space-y-6">
+					<!-- Full Name -->
+					<div>
+						<label class="block text-sm font-semibold text-neutral-700 mb-2">Full Name <span class="text-red-500">*</span></label>
+						<div class="input-group">
+							<div class="input-icon">
+								<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+								</svg>
+							</div>
+							<input 
+								type="text" 
+								name="full_name" 
+								value="<?php echo htmlspecialchars($_POST['full_name'] ?? ''); ?>" 
+								class="form-input w-full border-2 border-neutral-300 rounded-xl px-4 py-3 pl-12 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-maroon-500 transition-all" 
+								placeholder="Enter your full name"
+								required 
+							/>
+						</div>
+					</div>
+
+					<!-- Username -->
+					<div>
+						<label class="block text-sm font-semibold text-neutral-700 mb-2">Username <span class="text-red-500">*</span></label>
+						<div class="input-group">
+							<div class="input-icon">
+								<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+								</svg>
+							</div>
+							<input 
+								type="text" 
+								name="username" 
+								value="<?php echo htmlspecialchars($_POST['username'] ?? ''); ?>" 
+								class="form-input w-full border-2 border-neutral-300 rounded-xl px-4 py-3 pl-12 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-maroon-500 transition-all" 
+								placeholder="Choose a username"
+								required 
+							/>
+						</div>
+					</div>
+
+					<!-- Email -->
+					<div>
+						<label class="block text-sm font-semibold text-neutral-700 mb-2">Email Address <span class="text-red-500">*</span></label>
+						<div class="input-group">
+							<div class="input-icon">
+								<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+								</svg>
+							</div>
+							<input 
+								type="email" 
+								name="email" 
+								value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>" 
+								class="form-input w-full border-2 border-neutral-300 rounded-xl px-4 py-3 pl-12 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-maroon-500 transition-all" 
+								placeholder="your.email@example.com"
+								required 
+							/>
+						</div>
+					</div>
+
+					<!-- Password -->
+					<div>
+						<label class="block text-sm font-semibold text-neutral-700 mb-2">Password <span class="text-red-500">*</span></label>
+						<div class="input-group">
+							<div class="input-icon">
+								<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+								</svg>
+							</div>
+							<input 
+								type="password" 
+								name="password" 
+								class="form-input w-full border-2 border-neutral-300 rounded-xl px-4 py-3 pl-12 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-maroon-500 transition-all" 
+								placeholder="Create a secure password"
+								required 
+							/>
+						</div>
+						<p class="text-xs text-neutral-500 mt-2 flex items-center gap-1">
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+							</svg>
+							Must be at least 6 characters long
+						</p>
+					</div>
+
+					<!-- Organization (Optional) -->
+					<div>
+						<label class="block text-sm font-semibold text-neutral-700 mb-2">Organization <span class="text-neutral-400 text-xs">(Optional)</span></label>
+						<div class="input-group">
+							<div class="input-icon">
+								<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+								</svg>
+							</div>
+							<input 
+								type="text" 
+								name="organization" 
+								value="<?php echo htmlspecialchars($_POST['organization'] ?? ''); ?>" 
+								class="form-input w-full border-2 border-neutral-300 rounded-xl px-4 py-3 pl-12 focus:outline-none focus:ring-2 focus:ring-maroon-500 focus:border-maroon-500 transition-all" 
+								placeholder="Your organization or company"
+							/>
+						</div>
+					</div>
+
+					<!-- Submit Button -->
+					<div class="pt-4">
+						<button 
+							type="submit" 
+							class="w-full bg-gradient-to-r from-maroon-700 to-maroon-800 text-white font-semibold py-4 px-6 rounded-xl hover:from-maroon-800 hover:to-maroon-900 transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+						>
+							<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
+							</svg>
+							Create Account
+						</button>
 			</div>
-			<div>
-				<label class="block text-sm text-neutral-700 mb-1">Email</label>
-				<input type="email" name="email" value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>" class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500" required />
+
+					<!-- Login Link -->
+					<div class="pt-4 text-center">
+						<p class="text-neutral-600">
+							Already have an account? 
+							<a href="<?php echo base_url('login.php'); ?>" class="text-maroon-700 font-semibold hover:text-maroon-800 hover:underline transition-colors">
+								Sign in here
+							</a>
+						</p>
 			</div>
-			<div>
-				<label class="block text-sm text-neutral-700 mb-1">Password</label>
-				<input type="password" name="password" class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-maroon-500" required />
-				<p class="text-xs text-neutral-500 mt-1">Must be at least 6 characters</p>
+				</form>
 			</div>
 		</div>
-		<div class="mt-4">
-			<button class="inline-flex items-center px-4 py-2 rounded bg-maroon-700 text-white hover:bg-maroon-800" type="submit">Create Account</button>
 		</div>
-	</form>
 </div>
 
 <?php require_once __DIR__ . '/partials/footer.php'; ?>
